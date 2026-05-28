@@ -1,0 +1,58 @@
+server:
+    addr: 127.0.0.1:8088
+plugins:
+    sensitive_word:
+        enabled: true
+        algorithm: dfa
+        custom_dict_path: ""
+        dicts:
+            - political
+            - violence
+            - pornography
+            - reactionary
+            - advertisement
+            - corruption
+            - gun_explosion
+            - people_life
+        normalizer: strict
+    garak:
+        enabled: true
+        api_key: ""
+        max_concurrency: 3
+        model_name: ""
+        timeout: 600
+    infra_scan:
+        enabled: true
+        adv_templates: data/vuln
+        fp_templates: data/fingerprints
+        rate_limit: 200
+        timeout: 10
+    mcpsec:
+        enabled: true
+        severity_filter: critical,high,medium
+    autoswagger:
+        enabled: true
+        brute: false
+        rate: 30
+        risk: false
+        timeout: 300
+    ratelimit:
+        enabled: true
+        duration: 60
+        ramp_up: 10
+        threads: 50
+ai:
+    enabled: false
+    provider: openai
+    base_url: http://gsqx.crccklyy.com:11434/v1
+    api_key: ""
+    model: deepseek-r1:32b
+    fallback_to_template: false
+database:
+    type: sqlite
+    path: data/aig.db
+reports:
+    output_dir: reports
+    formats:
+        - html
+        - json

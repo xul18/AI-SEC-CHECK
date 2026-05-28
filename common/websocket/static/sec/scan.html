@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scan Center - AI-SEC-CHECK</title>
+<link rel="stylesheet" href="style.css">
+<style>
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2234;
+  --bg-card-hover: #1f2b42;
+  --bg-input: #0f1729;
+  --border-color: #2a3550;
+  --border-active: #3b82f6;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-glow: rgba(59, 130, 246, 0.15);
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --critical: #dc2626;
+  --high: #ef4444;
+  --medium: #f59e0b;
+  --low: #3b82f6;
+  --info: #6b7280;
+  --cat-infra: #8b5cf6;
+  --cat-mcp: #06b6d4;
+  --cat-model-safety: #f43f5e;
+  --cat-content-safety: #f97316;
+  --cat-api: #22c55e;
+  --cat-ratelimit: #eab308;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --transition: 0.2s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+  letter-spacing: 0.5px;
+}
+
+.nav-brand svg { flex-shrink: 0; }
+
+.nav-links {
+  display: flex;
+  gap: 4px;
+  list-style: none;
+}
+
+.nav-links a {
+  display: block;
+  padding: 8px 16px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius);
+  transition: color var(--transition), background var(--transition);
+}
+
+.nav-links a:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.05);
+}
+
+.nav-links a.active {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.main-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.page-header {
+  margin-bottom: 32px;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.page-header p {
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugins-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.plugin-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+  position: relative;
+}
+
+.plugin-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--text-muted);
+}
+
+.plugin-card.selected {
+  border-color: var(--accent);
+  background: var(--bg-card-hover);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 20px var(--accent-glow);
+}
+
+.plugin-card.selected::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+  background-size: 14px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.plugin-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.plugin-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.plugin-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-category {
+  color: #fff;
+}
+
+.badge-category.infra { background: var(--cat-infra); }
+.badge-category.mcp { background: var(--cat-mcp); }
+.badge-category.model_safety { background: var(--cat-model-safety); }
+.badge-category.content_safety { background: var(--cat-content-safety); }
+.badge-category.api { background: var(--cat-api); }
+.badge-category.ratelimit { background: var(--cat-ratelimit); }
+
+.badge-status {
+  border: 1px solid;
+}
+
+.badge-status.available {
+  color: var(--success);
+  border-color: var(--success);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.badge-status.unavailable {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.scan-form-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 32px;
+  display: none;
+}
+
+.scan-form-section.visible { display: block; }
+
+.plugin-params-section {
+  background: rgba(59,130,246,0.05);
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 16px 0 0 0;
+}
+
+.plugin-params-section .section-title {
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.plugin-params-section .form-group {
+  margin-bottom: 0;
+}
+
+.plugin-params-section .form-group label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.plugin-params-section .form-group input,
+.plugin-params-section .form-group select {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.plugin-params-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group select,
+.form-group input[type="text"],
+.form-group input[type="password"] {
+  height: 40px;
+  padding: 0 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.form-group select:focus,
+.form-group input[type="text"]:focus,
+.form-group input[type="password"]:focus {
+  border-color: var(--accent);
+}
+
+.form-group select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--transition), opacity var(--transition);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover { background: var(--accent-hover); }
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-primary);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.scanning-indicator {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.scanning-indicator.visible { display: flex; }
+
+.progress-bar-container {
+  width: 100%;
+  margin-top: 8px;
+  display: none;
+}
+
+.progress-bar-container.visible { display: block; }
+
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-upload-area {
+  display: none;
+  margin-top: 8px;
+}
+
+.file-upload-area.visible { display: block; }
+
+.file-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--bg-input);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+
+.file-upload-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.file-name-display {
+  font-size: 12px;
+  color: var(--success);
+  margin-top: 4px;
+}
+
+.results-section {
+  display: none;
+}
+
+.results-section.visible { display: block; }
+
+.result-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.result-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-text {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.summary-stats {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.findings-table-wrapper {
+  overflow-x: auto;
+}
+
+.findings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.findings-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.findings-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(42, 53, 80, 0.5);
+  vertical-align: top;
+}
+
+.findings-table tr:last-child td { border-bottom: none; }
+
+.findings-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.severity-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff;
+}
+
+.severity-badge.critical { background: var(--critical); }
+.severity-badge.high { background: var(--high); }
+.severity-badge.medium { background: var(--medium); color: #000; }
+.severity-badge.low { background: var(--low); }
+.severity-badge.info { background: var(--info); }
+
+.rule-id {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.evidence-code {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.ai-analysis-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.ai-analysis-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.markdown-content {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  color: var(--text-primary);
+  margin: 16px 0 8px;
+}
+
+.markdown-content h1 { font-size: 20px; }
+.markdown-content h2 { font-size: 17px; }
+.markdown-content h3 { font-size: 15px; }
+
+.markdown-content p { margin: 8px 0; }
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.markdown-content li { margin: 4px 0; }
+
+.markdown-content code {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  background: rgba(255,255,255,0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.markdown-content pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 14px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  margin: 12px 0;
+  color: var(--text-muted);
+}
+
+.error-banner {
+  display: none;
+  padding: 12px 20px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.error-banner.visible { display: block; }
+
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+
+.empty-state svg {
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.empty-state p {
+  font-size: 15px;
+}
+
+.loading-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.skeleton-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 14px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.skeleton-line.short { width: 60%; }
+.skeleton-line.medium { width: 80%; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (max-width: 768px) {
+  .navbar { padding: 0 16px; }
+  .nav-links a { padding: 8px 10px; font-size: 13px; }
+  .main-content { padding: 20px 16px; }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .plugins-grid {
+    grid-template-columns: 1fr;
+  }
+  .summary-stats { gap: 16px; }
+}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="/sec/dashboard.html" class="nav-brand">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" fill="#3b82f6" opacity="0.2"/>
+      <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="#3b82f6" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M12 8a2 2 0 11-.001 4.001A2 2 0 0112 8zm0 6c-2.67 0-4 1.33-4 2v1h8v-1c0-.67-1.33-2-4-2z" fill="#3b82f6"/>
+    </svg>
+    AI-SEC-CHECK
+  </a>
+  <ul class="nav-links">
+    <li><a href="/sec/dashboard.html">Dashboard</a></li>
+    <li><a href="/sec/scan.html" class="active">Scan Center</a></li>
+    <li><a href="/sec/chat.html">AI Chat</a></li>
+    <li><a href="/sec/config.html">AI Config</a></li>
+  </ul>
+</nav>
+
+<main class="main-content">
+  <div class="page-header">
+    <h1>Scan Center</h1>
+    <p>Select a security plugin and configure your scan target to begin analysis.</p>
+  </div>
+
+  <div id="errorBanner" class="error-banner"></div>
+
+  <div class="section-title">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    Available Plugins
+  </div>
+
+  <div id="pluginsLoading" class="loading-skeleton">
+    <div class="skeleton-card"><div class="skeleton-line medium"></div><div class="skeleton-line short"></div><div class="skeleton-line short"></div></div>
+    <div class="skeleton-card"><div class="skeleton-line medium"></div><div class="skeleton-line short"></div><div class="skeleton-line short"></div></div>
+    <div class="skeleton-card"><div class="skeleton-line medium"></div><div class="skeleton-line short"></div><div class="skeleton-line short"></div></div>
+  </div>
+
+  <div id="pluginsGrid" class="plugins-grid" style="display:none;"></div>
+
+  <div id="scanFormSection" class="scan-form-section">
+    <div class="section-title" style="margin-bottom:16px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Configure Scan
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="targetType">Target Type</label>
+        <select id="targetType"></select>
+      </div>
+      <div class="form-group">
+        <label for="targetInput">Target</label>
+        <input type="text" id="targetInput" placeholder="Enter target value...">
+        <div id="fileUploadArea" class="file-upload-area">
+          <label class="file-upload-btn" for="fileInput">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload File
+          </label>
+          <input type="file" id="fileInput" style="display:none" accept=".json,.yaml,.yml,.txt,.xml,.csv,.log,.conf,.cfg,.ini,.toml">
+          <div id="fileNameDisplay" class="file-name-display"></div>
+        </div>
+      </div>
+      <button id="scanBtn" class="btn btn-primary" onclick="startScan()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Scan
+      </button>
+    </div>
+    <div id="pluginParamsSection" class="plugin-params-section" style="display:none;">
+      <div class="section-title" style="margin-bottom:12px;font-size:14px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Plugin Parameters
+      </div>
+      <div id="pluginParamsGrid" class="form-grid" style="grid-template-columns:1fr 1fr;"></div>
+    </div>
+    <div class="form-row">
+      <label class="checkbox-group">
+        <input type="checkbox" id="aiAnalyze">
+        <span>AI Analyze</span>
+      </label>
+      <span id="selectedPluginLabel" style="font-size:13px;color:var(--text-muted);"></span>
+    </div>
+  </div>
+
+  <div id="scanningIndicator" class="scanning-indicator">
+    <div class="spinner"></div>
+    <span id="scanningText">Scanning...</span>
+  </div>
+  <div id="progressBarContainer" class="progress-bar-container">
+    <div class="progress-bar-track">
+      <div id="progressBarFill" class="progress-bar-fill"></div>
+    </div>
+    <div id="progressMessage" class="progress-message"></div>
+  </div>
+
+  <div id="resultsSection" class="results-section">
+    <div class="section-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Scan Results
+    </div>
+
+    <div id="summaryCard" class="result-card">
+      <h3>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Summary
+      </h3>
+      <div id="summaryText" class="summary-text"></div>
+      <div id="summaryStats" class="summary-stats"></div>
+    </div>
+
+    <div id="findingsCard" class="result-card">
+      <h3>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Findings
+      </h3>
+      <div class="findings-table-wrapper">
+        <table class="findings-table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Title</th>
+              <th>Rule ID</th>
+              <th>Description</th>
+              <th>Evidence</th>
+            </tr>
+          </thead>
+          <tbody id="findingsBody"></tbody>
+        </table>
+      </div>
+      <div id="noFindings" class="empty-state" style="display:none;padding:24px;">
+        <p>No findings reported.</p>
+      </div>
+    </div>
+
+    <div id="aiAnalysisCard" class="ai-analysis-card" style="display:none;">
+      <h3>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M16 14H8a6 6 0 0 0-6 6v1h20v-1a6 6 0 0 0-6-6z"/></svg>
+        AI Analysis
+      </h3>
+      <div id="aiAnalysisContent" class="markdown-content"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+(function() {
+  var PLUGIN_TARGET_MAP = {
+    infra_scan: ['url', 'ip', 'cidr'],
+    sensitive_word: ['text', 'file'],
+    mcpsec: ['mcp_config', 'file'],
+    garak: ['url'],
+    autoswagger: ['url'],
+    ratelimit: ['url']
+  };
+
+  var TARGET_LABELS = {
+    url: 'URL',
+    ip: 'IP Address',
+    cidr: 'CIDR Range',
+    text: 'Text Content',
+    file: 'Upload File',
+    mcp_config: 'MCP Config (JSON)',
+    host: 'Host'
+  };
+
+  var TARGET_PLACEHOLDERS = {
+    url: 'https://example.com or http://host:port',
+    ip: '192.168.1.1',
+    cidr: '192.168.1.0/24',
+    text: 'Enter text to analyze...',
+    file: '',
+    mcp_config: '{"mcpServers":{...}}',
+    host: 'example.com'
+  };
+
+  var FILE_UPLOAD_TYPES = ['file', 'mcp_config'];
+
+  var CATEGORY_LABELS = {
+    infra: 'Infra',
+    mcp: 'MCP',
+    model_safety: 'Model Safety',
+    content_safety: 'Content Safety',
+    api: 'API',
+    ratelimit: 'Rate Limit'
+  };
+
+  var selectedPlugin = null;
+  var isScanning = false;
+  var plugins = [];
+  var uploadedFileContent = '';
+  var progressTimer = null;
+
+  var PLUGIN_PARAMS = {
+    garak: [
+      { key: 'target_name', label: 'Model Name', type: 'text', placeholder: 'e.g. qwen3:0.6b, gpt-4o-mini', hint: 'The model to test (as in OpenAI-compatible API)' },
+      { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'sk-xxx (leave empty for local models)', hint: 'API key for authentication. Not needed for local Ollama/vLLM.' },
+      { key: 'probes', label: 'Probe Filter', type: 'select', options: [
+        { value: '', label: 'All Probes (32)' },
+        { value: 'prompt_injection', label: 'Prompt Injection (21)' },
+        { value: 'dan', label: 'DAN Jailbreak (2)' },
+        { value: 'roleplay', label: 'Roleplay (2)' },
+        { value: 'encoding', label: 'Encoding Bypass (2)' },
+        { value: 'privilege_escalation', label: 'Privilege Escalation (1)' },
+        { value: 'data_exfiltration', label: 'Data Exfiltration (2)' },
+        { value: 'safety_bypass', label: 'Safety Bypass (2)' },
+        { value: 'promptinject', label: 'PromptInject Only' }
+      ], hint: 'Select which probe categories to run' },
+      { key: 'max_concurrency', label: 'Concurrency', type: 'select', options: [
+        { value: '1', label: '1 (Slow)' },
+        { value: '3', label: '3 (Default)' },
+        { value: '5', label: '5 (Fast)' },
+        { value: '10', label: '10 (Aggressive)' }
+      ], hint: 'Number of concurrent probe requests' }
+    ],
+    ratelimit: [
+      { key: 'min_threads', label: 'Min Threads (req/s)', type: 'select', options: [
+        { value: '5', label: '5 req/s' },
+        { value: '10', label: '10 req/s (Default)' },
+        { value: '20', label: '20 req/s' },
+        { value: '50', label: '50 req/s' }
+      ], hint: 'Starting concurrent thread count' },
+      { key: 'max_threads', label: 'Max Threads (req/s)', type: 'select', options: [
+        { value: '50', label: '50 req/s' },
+        { value: '100', label: '100 req/s' },
+        { value: '200', label: '200 req/s (Default)' },
+        { value: '500', label: '500 req/s (Aggressive)' }
+      ], hint: 'Maximum concurrent thread count' },
+      { key: 'duration', label: 'Duration', type: 'select', options: [
+        { value: '10', label: '10 seconds' },
+        { value: '30', label: '30 seconds (Default)' },
+        { value: '60', label: '60 seconds' },
+        { value: '120', label: '120 seconds' }
+      ], hint: 'Total test duration' },
+      { key: 'ramp_up', label: 'Ramp-up Time', type: 'select', options: [
+        { value: '5', label: '5 seconds' },
+        { value: '10', label: '10 seconds (Default)' },
+        { value: '20', label: '20 seconds' },
+        { value: '30', label: '30 seconds' }
+      ], hint: 'Time to gradually increase from min to max threads' }
+    ]
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function showError(msg) {
+    var el = $('errorBanner');
+    el.textContent = msg;
+    el.classList.add('visible');
+    setTimeout(function() { el.classList.remove('visible'); }, 8000);
+  }
+
+  function hideError() {
+    $('errorBanner').classList.remove('visible');
+  }
+
+  function renderPlugins(data) {
+    var grid = $('pluginsGrid');
+    var loading = $('pluginsLoading');
+    grid.innerHTML = '';
+
+    if (!data || data.length === 0) {
+      grid.innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>No plugins available.</p></div>';
+      loading.style.display = 'none';
+      grid.style.display = 'block';
+      return;
+    }
+
+    data.forEach(function(plugin) {
+      var card = document.createElement('div');
+      card.className = 'plugin-card';
+      card.dataset.name = plugin.name;
+
+      var catClass = plugin.category || 'infra';
+      var catLabel = CATEGORY_LABELS[plugin.category] || plugin.category;
+      var statusClass = plugin.available ? 'available' : 'unavailable';
+      var statusLabel = plugin.available ? 'Available' : 'Unavailable';
+
+      card.innerHTML =
+        '<div class="plugin-name">' + escapeHtml(plugin.name) + '</div>' +
+        '<div class="plugin-desc">' + escapeHtml(plugin.description) + '</div>' +
+        '<div class="plugin-badges">' +
+          '<span class="badge badge-category ' + catClass + '">' + catLabel + '</span>' +
+          '<span class="badge badge-status ' + statusClass + '">' + statusLabel + '</span>' +
+        '</div>';
+
+      card.addEventListener('click', function() {
+        selectPlugin(plugin);
+      });
+
+      grid.appendChild(card);
+    });
+
+    loading.style.display = 'none';
+    grid.style.display = 'grid';
+  }
+
+  function selectPlugin(plugin) {
+    if (isScanning) return;
+
+    selectedPlugin = plugin;
+    uploadedFileContent = '';
+
+    var cards = document.querySelectorAll('.plugin-card');
+    cards.forEach(function(c) {
+      if (c.dataset.name === plugin.name) {
+        c.classList.add('selected');
+      } else {
+        c.classList.remove('selected');
+      }
+    });
+
+    var targetTypes = PLUGIN_TARGET_MAP[plugin.name] || ['url', 'text', 'host', 'mcp_config'];
+    var select = $('targetType');
+    select.innerHTML = '';
+    targetTypes.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = TARGET_LABELS[t] || t;
+      select.appendChild(opt);
+    });
+
+    updateTargetUI();
+    select.addEventListener('change', updateTargetUI);
+
+    $('selectedPluginLabel').textContent = 'Plugin: ' + plugin.name;
+    $('scanFormSection').classList.add('visible');
+    $('targetInput').focus();
+
+    renderPluginParams(plugin.name);
+  }
+
+  function renderPluginParams(pluginName) {
+    var section = $('pluginParamsSection');
+    var grid = $('pluginParamsGrid');
+    var params = PLUGIN_PARAMS[pluginName];
+
+    if (!params || params.length === 0) {
+      section.style.display = 'none';
+      grid.innerHTML = '';
+      return;
+    }
+
+    grid.innerHTML = '';
+    section.style.display = 'block';
+
+    params.forEach(function(p) {
+      var group = document.createElement('div');
+      group.className = 'form-group';
+
+      var label = document.createElement('label');
+      label.textContent = p.label;
+      label.setAttribute('for', 'param_' + p.key);
+      group.appendChild(label);
+
+      var input;
+      if (p.type === 'select') {
+        input = document.createElement('select');
+        input.id = 'param_' + p.key;
+        p.options.forEach(function(opt) {
+          var o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          input.appendChild(o);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = p.type;
+        input.id = 'param_' + p.key;
+        input.placeholder = p.placeholder || '';
+      }
+      group.appendChild(input);
+
+      if (p.hint) {
+        var hint = document.createElement('div');
+        hint.className = 'plugin-params-hint';
+        hint.textContent = p.hint;
+        group.appendChild(hint);
+      }
+
+      grid.appendChild(group);
+    });
+  }
+
+  function updateTargetUI() {
+    var type = $('targetType').value;
+    $('targetInput').placeholder = TARGET_PLACEHOLDERS[type] || 'Enter target value...';
+
+    var showUpload = FILE_UPLOAD_TYPES.indexOf(type) >= 0;
+    var uploadArea = $('fileUploadArea');
+    if (showUpload) {
+      uploadArea.classList.add('visible');
+      if (type === 'file') {
+        $('targetInput').style.display = 'none';
+      } else {
+        $('targetInput').style.display = '';
+      }
+    } else {
+      uploadArea.classList.remove('visible');
+      $('targetInput').style.display = '';
+    }
+    $('fileNameDisplay').textContent = '';
+    uploadedFileContent = '';
+  }
+
+  $('fileInput').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      uploadedFileContent = ev.target.result;
+      $('fileNameDisplay').textContent = '✓ ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+      if ($('targetType').value === 'mcp_config') {
+        $('targetInput').value = uploadedFileContent;
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  function updateProgress(current, total, message) {
+    var pct = 0;
+    if (total > 0) {
+      pct = Math.min(100, Math.round(current / total * 100));
+    } else if (current > 0) {
+      pct = Math.min(99, current);
+    }
+
+    $('progressBarFill').style.width = pct + '%';
+    $('progressMessage').textContent = message || '';
+    $('scanningText').textContent = 'Scanning... ' + pct + '%';
+  }
+
+  function pollProgress(scanID) {
+    if (progressTimer) clearInterval(progressTimer);
+
+    progressTimer = setInterval(function() {
+      fetch('/api/v1/plugins/scan-progress/' + scanID)
+        .then(function(res) { return res.json(); })
+        .then(function(resp) {
+          if (resp.status !== 0) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+            scanComplete(null, 'Scan progress not available');
+            return;
+          }
+
+          var data = resp.data;
+          updateProgress(data.current, data.total, data.message);
+
+          if (data.status === 'completed') {
+            clearInterval(progressTimer);
+            progressTimer = null;
+            scanComplete(data.result, null);
+          } else if (data.status === 'failed') {
+            clearInterval(progressTimer);
+            progressTimer = null;
+            scanComplete(null, data.message || 'Scan failed');
+          }
+        })
+        .catch(function() {});
+    }, 500);
+  }
+
+  function scanComplete(result, error) {
+    isScanning = false;
+    $('scanBtn').disabled = false;
+    $('scanningIndicator').classList.remove('visible');
+    $('progressBarContainer').classList.remove('visible');
+
+    if (error) {
+      showError(error);
+      return;
+    }
+
+    if (result) {
+      renderResults(result);
+
+      var aiMatch = (result.raw_output || '').match(/--- AI Analysis ---\n([\s\S]*)/);
+      if (aiMatch && aiMatch[1]) {
+        renderAIAnalysis(aiMatch[1].trim());
+      } else {
+        renderAIAnalysis(null);
+      }
+    }
+  }
+
+  function renderResults(data) {
+    var section = $('resultsSection');
+    section.classList.add('visible');
+
+    var summary = data.summary || 'Scan completed.';
+    $('summaryText').textContent = summary;
+
+    var statsEl = $('summaryStats');
+    statsEl.innerHTML = '';
+
+    var findings = data.findings || [];
+    var severityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    findings.forEach(function(f) {
+      var sev = (f.severity || 'info').toLowerCase();
+      if (severityCounts.hasOwnProperty(sev)) {
+        severityCounts[sev]++;
+      }
+    });
+
+    var statItems = [
+      { label: 'Findings', value: findings.length, color: 'var(--text-primary)' },
+      { label: 'Critical', value: severityCounts.critical, color: 'var(--critical)' },
+      { label: 'High', value: severityCounts.high, color: 'var(--high)' },
+      { label: 'Medium', value: severityCounts.medium, color: 'var(--medium)' },
+      { label: 'Low', value: severityCounts.low, color: 'var(--low)' },
+      { label: 'Info', value: severityCounts.info, color: 'var(--info)' }
+    ];
+
+    statItems.forEach(function(item) {
+      if (item.value > 0 || item.label === 'Findings') {
+        var div = document.createElement('div');
+        div.className = 'stat-item';
+        div.innerHTML =
+          '<div class="stat-value" style="color:' + item.color + '">' + item.value + '</div>' +
+          '<div class="stat-label">' + item.label + '</div>';
+        statsEl.appendChild(div);
+      }
+    });
+
+    var tbody = $('findingsBody');
+    tbody.innerHTML = '';
+    var noFindings = $('noFindings');
+
+    if (findings.length === 0) {
+      noFindings.style.display = 'block';
+      $('findingsCard').querySelector('table').style.display = 'none';
+    } else {
+      noFindings.style.display = 'none';
+      $('findingsCard').querySelector('table').style.display = '';
+      findings.forEach(function(f) {
+        var sev = (f.severity || 'info').toLowerCase();
+        var evidenceHtml = '';
+        if (f.evidence) {
+          evidenceHtml = '<pre class="evidence-code">' + escapeHtml(f.evidence) + '</pre>';
+        }
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><span class="severity-badge ' + sev + '">' + escapeHtml(sev.toUpperCase()) + '</span></td>' +
+          '<td>' + escapeHtml(f.title) + '</td>' +
+          '<td><span class="rule-id">' + escapeHtml(f.rule_id || '-') + '</span></td>' +
+          '<td>' + escapeHtml(f.description) + '</td>' +
+          '<td>' + evidenceHtml + '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+  }
+
+  function renderAIAnalysis(analysis) {
+    var card = $('aiAnalysisCard');
+    var content = $('aiAnalysisContent');
+    if (!analysis) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+    content.innerHTML = renderMarkdown(analysis);
+  }
+
+  function renderMarkdown(text) {
+    if (!text) return '';
+    var html = escapeHtml(text);
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    html = html.replace(/\n{2,}/g, '</p><p>');
+    html = '<p>' + html + '</p>';
+    html = html.replace(/<p><\/p>/g, '');
+    html = html.replace(/<p>(<h[1-3]>)/g, '$1');
+    html = html.replace(/(<\/h[1-3]>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<blockquote>)/g, '$1');
+    html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
+    return html;
+  }
+
+  window.startScan = function() {
+    if (isScanning || !selectedPlugin) return;
+
+    hideError();
+
+    var targetType = $('targetType').value;
+    var target = $('targetInput').value.trim();
+    var aiAnalyze = $('aiAnalyze').checked;
+
+    if (targetType === 'file') {
+      if (!uploadedFileContent) {
+        showError('Please upload a file first.');
+        return;
+      }
+      target = uploadedFileContent;
+      targetType = 'text';
+    } else if (targetType === 'mcp_config' && uploadedFileContent && !target) {
+      target = uploadedFileContent;
+    }
+
+    if (!target) {
+      showError('Please enter a target value.');
+      $('targetInput').focus();
+      return;
+    }
+
+    isScanning = true;
+    $('scanBtn').disabled = true;
+    $('scanningIndicator').classList.add('visible');
+    $('progressBarContainer').classList.add('visible');
+    $('progressBarFill').style.width = '0%';
+    $('progressMessage').textContent = 'Starting scan...';
+    $('scanningText').textContent = 'Scanning... 0%';
+    $('resultsSection').classList.remove('visible');
+    $('aiAnalysisCard').style.display = 'none';
+
+    var body = {
+      plugin_name: selectedPlugin.name,
+      target_type: targetType,
+      target: target,
+      ai_analyze: aiAnalyze
+    };
+
+    var pluginParams = PLUGIN_PARAMS[selectedPlugin.name];
+    if (pluginParams && pluginParams.length > 0) {
+      var metadata = {};
+      var params = {};
+      pluginParams.forEach(function(p) {
+        var el = $('param_' + p.key);
+        if (!el) return;
+        var val = el.value.trim();
+        if (!val) return;
+        if (p.key === 'target_name' || p.key === 'api_key' || p.key === 'probes') {
+          metadata[p.key] = val;
+        } else {
+          params[p.key] = val;
+        }
+      });
+      if (Object.keys(metadata).length > 0) {
+        body.metadata = metadata;
+      }
+      if (Object.keys(params).length > 0) {
+        body.params = params;
+      }
+    }
+
+    fetch('/api/v1/plugins/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(resp) {
+      if (resp.status !== 0) {
+        isScanning = false;
+        $('scanBtn').disabled = false;
+        $('scanningIndicator').classList.remove('visible');
+        $('progressBarContainer').classList.remove('visible');
+        showError(resp.message || 'Scan failed.');
+        return;
+      }
+
+      var scanID = resp.data && resp.data.scan_id;
+      if (scanID) {
+        pollProgress(scanID);
+      } else {
+        isScanning = false;
+        $('scanBtn').disabled = false;
+        $('scanningIndicator').classList.remove('visible');
+        $('progressBarContainer').classList.remove('visible');
+        showError('No scan ID returned.');
+      }
+    })
+    .catch(function(err) {
+      isScanning = false;
+      $('scanBtn').disabled = false;
+      $('scanningIndicator').classList.remove('visible');
+      $('progressBarContainer').classList.remove('visible');
+      showError('Network error: ' + err.message);
+    });
+  };
+
+  $('targetInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      window.startScan();
+    }
+  });
+
+  fetch('/api/v1/plugins')
+    .then(function(res) { return res.json(); })
+    .then(function(resp) {
+      if (resp.status !== 0) {
+        showError(resp.message || 'Failed to load plugins.');
+        $('pluginsLoading').style.display = 'none';
+        return;
+      }
+      plugins = resp.data || [];
+      renderPlugins(plugins);
+    })
+    .catch(function(err) {
+      showError('Failed to load plugins: ' + err.message);
+      $('pluginsLoading').style.display = 'none';
+    });
+})();
+</script>
+
+</body>
+</html>
