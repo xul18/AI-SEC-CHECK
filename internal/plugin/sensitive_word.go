@@ -154,10 +154,10 @@ func (p *SensitiveWordPlugin) scanText(text string) []Finding {
 		sources := strings.Join(mr.Source, ", ")
 		findings = append(findings, Finding{
 			Severity:    SeverityHigh,
-			Title:       fmt.Sprintf("Sensitive word detected: %s", maskWord(mr.Word)),
+			Title:       fmt.Sprintf("Sensitive word detected: %s", mr.Word),
 			Description: fmt.Sprintf("Sensitive word found from dict: %s", sources),
 			RuleID:      fmt.Sprintf("SW-%s", strings.ToUpper(sources)),
-			Evidence:    maskWord(mr.Word),
+			Evidence:    mr.Word,
 			Remediation: "Review and remove or replace the sensitive content",
 			Source:      sources,
 		})

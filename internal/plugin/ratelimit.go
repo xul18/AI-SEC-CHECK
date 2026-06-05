@@ -270,6 +270,9 @@ func (p *RatelimitPlugin) parseConfig(target ScanTarget) loadTestConfig {
 	if v, ok := target.Metadata["path"]; ok && v != "" {
 		lt.Path = v
 	}
+	if v, ok := target.Metadata["headers"]; ok && v != "" {
+		lt.Headers = parseHeaders(v)
+	}
 
 	if lt.Duration > 300 {
 		lt.Duration = 300
@@ -297,6 +300,29 @@ func parseInt(s string) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+func parseHeaders(s string) map[string]string {
+	headers := make(map[string]string)
+	if s == "" {
+		return headers
+	}
+	pairs := strings.Split(s, ";")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		colonIdx := strings.Index(pair, ":")
+		if colonIdx > 0 {
+			key := strings.TrimSpace(pair[:colonIdx])
+			value := strings.TrimSpace(pair[colonIdx+1:])
+			if key != "" {
+				headers[key] = value
+			}
+		}
+	}
+	return headers
 }
 
 func (p *RatelimitPlugin) sendRequest(ctx context.Context, baseURL string, lt loadTestConfig) (int, error) {

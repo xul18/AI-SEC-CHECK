@@ -294,6 +294,28 @@ body {
 .send-btn.abort { background: var(--danger); }
 .send-btn.abort:hover { background: #dc2626; }
 
+.upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.upload-btn:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-primary);
+  border-color: var(--border-active);
+}
+
 .welcome-message {
   display: flex;
   flex-direction: column;
@@ -534,6 +556,10 @@ body {
     </div>
 
     <div class="chat-input-bar">
+      <label class="upload-btn" for="fileInput">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </label>
+      <input type="file" id="fileInput" accept=".txt,.md,.json,.csv" style="display:none;">
       <input type="text" id="chatInput" placeholder="Type your question..." autocomplete="off">
       <button class="send-btn" id="sendBtn" onclick="sendMessage()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -555,8 +581,74 @@ body {
   var fallbackDetected = false;
   var currentAbortController = null;
 
+  var SESSION_KEY = 'ai_sec_check_chat_session';
   var sendIconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
   var abortIconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+  var uploadedFileContent = null;
+  var uploadedFileName = null;
+
+  function saveSession() {
+    var messages = [];
+    var msgEls = chatMessages.querySelectorAll('.chat-msg');
+    msgEls.forEach(function(el) {
+      var role = el.classList.contains('user') ? 'user' : 'assistant';
+      var bubble = el.querySelector('.chat-bubble');
+      var textEl = bubble.querySelector('.markdown-content');
+      var cardEl = bubble.querySelector('.scan-result-card');
+      var text = textEl ? textEl.textContent.trim() : '';
+      var scanResult = null;
+      if (cardEl) {
+        var plugin = cardEl.querySelector('.scan-title');
+        var meta = cardEl.querySelectorAll('.scan-meta span');
+        var target = '', status = '', duration = '';
+        if (meta.length >= 3) {
+          target = meta[0].textContent.replace('🎯 ', '').trim();
+          status = meta[1].textContent.replace('📊 ', '').trim();
+          if (meta[2]) duration = parseFloat(meta[2].textContent.replace('⏱ ', '').replace('s', '')) || 0;
+        }
+        var findings = [];
+        cardEl.querySelectorAll('.finding-item').forEach(function(f) {
+          var sev = f.querySelector('.finding-severity');
+          findings.push({
+            severity: sev ? sev.textContent.toLowerCase() : 'info',
+            title: f.querySelector('.finding-title') ? f.querySelector('.finding-title').textContent : '',
+            description: f.querySelector('.finding-desc') ? f.querySelector('.finding-desc').textContent : '',
+            evidence: f.querySelector('.finding-evidence') ? f.querySelector('.finding-evidence').textContent : ''
+          });
+        });
+        scanResult = { plugin: plugin ? plugin.textContent.replace(' 扫描结果', '').replace('🔍 ', '').trim() : '', target: target, status: status, duration: duration, findings: findings };
+      }
+      messages.push({ role: role, text: text, scanResult: scanResult });
+    });
+    var sessionData = { messages: messages, fallbackDetected: fallbackDetected };
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+    } catch (e) {}
+  }
+
+  function loadSession() {
+    try {
+      var raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return false;
+      var sessionData = JSON.parse(raw);
+      var messages = sessionData.messages;
+      if (!Array.isArray(messages) || messages.length === 0) return false;
+
+      messages.forEach(function(msg) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          addMessage(msg.role, msg.text, msg.scanResult, false);
+        }
+      });
+      if (sessionData.fallbackDetected) {
+        fallbackDetected = true;
+        fallbackBanner.classList.add('visible');
+        setAIStatus('fallback');
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -575,7 +667,8 @@ body {
     }
   }
 
-  function addMessage(role, text, scanResult) {
+  function addMessage(role, text, scanResult, doSave) {
+    if (doSave === undefined) doSave = true;
     hideWelcome();
 
     var msgDiv = document.createElement('div');
@@ -608,6 +701,7 @@ body {
     chatMessages.appendChild(msgDiv);
     scrollToBottom();
 
+    if (doSave) saveSession();
     return bubble;
   }
 
@@ -660,6 +754,19 @@ body {
     }
   }
 
+  function handleFileUpload(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(event) {
+      uploadedFileContent = event.target.result;
+      uploadedFileName = file.name;
+      chatInput.placeholder = '文件已上传: ' + file.name + ' - 输入扫描命令...';
+    };
+    reader.readAsText(file);
+  }
+
   function checkAIStatus() {
     setAIStatus('loading');
 
@@ -694,14 +801,20 @@ body {
     sendBtn.disabled = false;
     chatInput.value = '';
 
-    addMessage('user', question);
+    var displayText = question;
+    if (uploadedFileName) {
+      displayText += ' (文件: ' + uploadedFileName + ')';
+    }
+    addMessage('user', displayText);
     showTypingIndicator();
 
     currentAbortController = new AbortController();
 
     var body = {
       question: question,
-      context: ''
+      context: '',
+      file_content: uploadedFileContent,
+      file_name: uploadedFileName
     };
 
     fetch('/api/v1/ai/chat', {
@@ -724,6 +837,8 @@ body {
       }
 
       addMessage('assistant', answer, scanResult);
+      uploadedFileContent = null;
+      uploadedFileName = null;
 
       if ((answer.indexOf('AI 助手尚未配置') !== -1 || answer.indexOf('AI 服务连接失败') !== -1) && !fallbackDetected) {
         fallbackDetected = true;
@@ -769,7 +884,10 @@ body {
     }
   });
 
+  document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+
   chatInput.focus();
+  loadSession();
   checkAIStatus();
 
   function renderMarkdown(text) {

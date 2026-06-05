@@ -213,8 +213,10 @@ func (api *AIAPI) HandleSuggestFix(c *gin.Context) {
 }
 
 type AIChatRequest struct {
-	Question string `json:"question" binding:"required"`
-	Context  string `json:"context"`
+	Question    string `json:"question" binding:"required"`
+	Context     string `json:"context"`
+	FileContent string `json:"file_content"`
+	FileName    string `json:"file_name"`
 }
 
 func (api *AIAPI) HandleChat(c *gin.Context) {
@@ -229,7 +231,16 @@ func (api *AIAPI) HandleChat(c *gin.Context) {
 
 	intent := ai.ParseScanIntent(req.Question)
 	if intent.Detected && api.registry != nil {
-		scanResult, scanErr := api.executeScan(intent)
+		var targetValue string
+		if req.FileContent != "" && (strings.Contains(strings.ToLower(req.Question), "敏感词") || 
+			strings.Contains(strings.ToLower(req.Question), "sensitive") ||
+			intent.PluginName == "sensitive_word") {
+			targetValue = req.FileContent
+		} else {
+			targetValue = intent.TargetValue
+		}
+
+		scanResult, scanErr := api.executeScanWithTarget(intent, targetValue)
 		if scanErr != nil {
 			answer, _ := api.manager.Chat(req.Question, req.Context)
 			c.JSON(http.StatusOK, gin.H{
@@ -306,6 +317,10 @@ func (api *AIAPI) HandleChat(c *gin.Context) {
 }
 
 func (api *AIAPI) executeScan(intent ai.ScanIntent) (*plugin.ScanResult, error) {
+	return api.executeScanWithTarget(intent, intent.TargetValue)
+}
+
+func (api *AIAPI) executeScanWithTarget(intent ai.ScanIntent, targetValue string) (*plugin.ScanResult, error) {
 	p, ok := api.registry.Get(intent.PluginName)
 	if !ok {
 		return nil, fmt.Errorf("plugin %s not found", intent.PluginName)
@@ -316,8 +331,8 @@ func (api *AIAPI) executeScan(intent ai.ScanIntent) (*plugin.ScanResult, error) 
 	}
 
 	scanTarget := plugin.ScanTarget{
-		Type:  intent.TargetType,
-		Value: intent.TargetValue,
+		Type:  plugin.TargetTypeText,
+		Value: targetValue,
 	}
 
 	if err := p.ValidateTarget(scanTarget); err != nil {

@@ -609,6 +609,49 @@ body {
   overflow-y: auto;
 }
 
+.finding-row.clickable {
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.finding-row.clickable:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.finding-row.clickable.expanded {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.finding-detail {
+  background: var(--bg-secondary);
+}
+
+.finding-detail .detail-content {
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.finding-detail .detail-content h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.evidence-full {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .ai-analysis-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -930,7 +973,7 @@ body {
     host: 'example.com'
   };
 
-  var FILE_UPLOAD_TYPES = ['file', 'mcp_config'];
+  var FILE_UPLOAD_TYPES = ['file'];
 
   var CATEGORY_LABELS = {
     infra: 'Infra',
@@ -939,6 +982,15 @@ body {
     content_safety: 'Content Safety',
     api: 'API',
     ratelimit: 'Rate Limit'
+  };
+
+  var PLUGIN_NAME_LABELS = {
+    'infra_scan': 'Infra Scan（基础设施扫描）',
+    'sensitive_word': 'Sensitive Word（敏感词检测）',
+    'mcpsec': 'MCP Security（MCP安全扫描）',
+    'garak': 'Garak（越狱检测）',
+    'autoswagger': 'Auto Swagger（API授权扫描）',
+    'ratelimit': 'Ratelimit（限流检测）'
   };
 
   var selectedPlugin = null;
@@ -993,7 +1045,8 @@ body {
         { value: '10', label: '10 seconds (Default)' },
         { value: '20', label: '20 seconds' },
         { value: '30', label: '30 seconds' }
-      ], hint: 'Time to gradually increase from min to max threads' }
+      ], hint: 'Time to gradually increase from min to max threads' },
+      { key: 'headers', label: 'Custom Headers', type: 'text', placeholder: 'Authorization:Bearer xxx;X-Custom:xxx', hint: 'Custom HTTP headers (format: Key1:Value1;Key2:Value2)' }
     ]
   };
 
@@ -1031,9 +1084,10 @@ body {
       var catLabel = CATEGORY_LABELS[plugin.category] || plugin.category;
       var statusClass = plugin.available ? 'available' : 'unavailable';
       var statusLabel = plugin.available ? 'Available' : 'Unavailable';
+      var pluginNameLabel = PLUGIN_NAME_LABELS[plugin.name] || plugin.name;
 
       card.innerHTML =
-        '<div class="plugin-name">' + escapeHtml(plugin.name) + '</div>' +
+        '<div class="plugin-name">' + escapeHtml(pluginNameLabel) + '</div>' +
         '<div class="plugin-desc">' + escapeHtml(plugin.description) + '</div>' +
         '<div class="plugin-badges">' +
           '<span class="badge badge-category ' + catClass + '">' + catLabel + '</span>' +
@@ -1297,20 +1351,54 @@ body {
     } else {
       noFindings.style.display = 'none';
       $('findingsCard').querySelector('table').style.display = '';
-      findings.forEach(function(f) {
+      findings.forEach(function(f, index) {
         var sev = (f.severity || 'info').toLowerCase();
         var evidenceHtml = '';
+        var hasFullEvidence = false;
+        var fullEvidence = '';
+        
         if (f.evidence) {
-          evidenceHtml = '<pre class="evidence-code">' + escapeHtml(f.evidence) + '</pre>';
+          var escapedEvidence = escapeHtml(f.evidence);
+          var maxLength = 150;
+          if (escapedEvidence.length > maxLength) {
+            hasFullEvidence = true;
+            fullEvidence = escapedEvidence;
+            evidenceHtml = '<pre class="evidence-code truncated">' + escapedEvidence.substring(0, maxLength) + '...' + '</pre>';
+          } else {
+            evidenceHtml = '<pre class="evidence-code">' + escapedEvidence + '</pre>';
+          }
         }
+        
         var tr = document.createElement('tr');
+        tr.className = 'finding-row' + (hasFullEvidence ? ' clickable' : '');
+        tr.setAttribute('data-index', index);
+        
         tr.innerHTML =
           '<td><span class="severity-badge ' + sev + '">' + escapeHtml(sev.toUpperCase()) + '</span></td>' +
           '<td>' + escapeHtml(f.title) + '</td>' +
           '<td><span class="rule-id">' + escapeHtml(f.rule_id || '-') + '</span></td>' +
           '<td>' + escapeHtml(f.description) + '</td>' +
           '<td>' + evidenceHtml + '</td>';
+        
         tbody.appendChild(tr);
+        
+        if (hasFullEvidence) {
+          var detailRow = document.createElement('tr');
+          detailRow.className = 'finding-detail';
+          detailRow.style.display = 'none';
+          detailRow.innerHTML = '<td colspan="5"><div class="detail-content"><h4>详细信息</h4><pre class="evidence-full">' + fullEvidence + '</pre></div></td>';
+          tbody.appendChild(detailRow);
+        }
+      });
+      
+      document.querySelectorAll('.finding-row.clickable').forEach(function(row) {
+        row.addEventListener('click', function() {
+          var detailRow = this.nextElementSibling;
+          if (detailRow && detailRow.classList.contains('finding-detail')) {
+            detailRow.style.display = detailRow.style.display === 'none' ? 'table-row' : 'none';
+            this.classList.toggle('expanded');
+          }
+        });
       });
     }
   }

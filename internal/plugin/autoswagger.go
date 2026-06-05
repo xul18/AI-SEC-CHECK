@@ -118,11 +118,20 @@ func (p *AutoswaggerPlugin) Scan(ctx context.Context, target ScanTarget) (*ScanR
 		rawOutputs = append(rawOutputs, fmt.Sprintf("Extracted %d endpoint(s) from spec", len(specEndpoints)))
 	}
 
+	htmlEndpoints := []apiEndpoint{}
+	if len(specEndpoints) == 0 {
+		htmlEndpoints = p.discoverEndpointsFromSwaggerUIHTML(ctx, baseURL)
+		if len(htmlEndpoints) > 0 {
+			rawOutputs = append(rawOutputs, fmt.Sprintf("Discovered %d endpoint(s) from Swagger UI page", len(htmlEndpoints)))
+		}
+	}
+
 	commonEndpoints := p.getCommonEndpoints()
 
-	allEndpoints := p.mergeEndpoints(specEndpoints, commonEndpoints)
+	allEndpoints := p.mergeEndpoints(specEndpoints, htmlEndpoints)
+	allEndpoints = p.mergeEndpointsSlice(allEndpoints, commonEndpoints)
 	totalEndpoints = len(allEndpoints)
-	rawOutputs = append(rawOutputs, fmt.Sprintf("Total: %d endpoint(s) to test (%d from spec + %d common)", totalEndpoints, len(specEndpoints), totalEndpoints-len(specEndpoints)))
+	rawOutputs = append(rawOutputs, fmt.Sprintf("Total: %d endpoint(s) to test (%d from spec + %d from UI + %d common)", totalEndpoints, len(specEndpoints), len(htmlEndpoints), totalEndpoints-len(specEndpoints)-len(htmlEndpoints)))
 
 	for i, ep := range allEndpoints {
 		ReportProgress(ctx, i+1, totalEndpoints, fmt.Sprintf("Testing endpoint [%d/%d]: %s %s", i+1, totalEndpoints, ep.Method, ep.Path))
@@ -376,6 +385,115 @@ func (p *AutoswaggerPlugin) discoverSwaggerUI(ctx context.Context, baseURL strin
 	return nil, ""
 }
 
+func (p *AutoswaggerPlugin) discoverEndpointsFromSwaggerUIHTML(ctx context.Context, baseURL string) []apiEndpoint {
+	uiPaths := []string{
+		"/swagger-ui.html",
+		"/swagger-ui/",
+		"/swagger-ui/index.html",
+		"/docs/",
+		"/docs/index.html",
+		"/api-docs/",
+		"/redoc",
+		"/rapidoc",
+		"/scalar",
+	}
+
+	var allEndpoints []apiEndpoint
+	seen := map[string]bool{}
+
+	for _, uiPath := range uiPaths {
+		url := baseURL + uiPath
+		resp, err := p.fetchURL(ctx, url, "text/html, */*")
+		if err != nil || resp.statusCode != 200 {
+			continue
+		}
+
+		if !strings.Contains(resp.contentType, "text/html") && !strings.Contains(resp.body, "<") {
+			continue
+		}
+
+		ReportProgress(ctx, 0, 0, fmt.Sprintf("Parsing Swagger UI page: %s for endpoint links...", url))
+
+		endpoints := p.extractEndpointsFromSwaggerUIHTML(resp.body, baseURL)
+		for _, ep := range endpoints {
+			key := ep.Method + " " + ep.Path
+			if !seen[key] {
+				seen[key] = true
+				allEndpoints = append(allEndpoints, ep)
+			}
+		}
+
+		jsURLs := p.extractJSFileURLs(resp.body, baseURL)
+		for _, jsURL := range jsURLs {
+			jsResp, err := p.fetchURL(ctx, jsURL, "text/javascript, */*")
+			if err != nil || jsResp.statusCode != 200 {
+				continue
+			}
+			jsEndpoints := p.extractEndpointsFromSwaggerUIHTML(jsResp.body, baseURL)
+			for _, ep := range jsEndpoints {
+				key := ep.Method + " " + ep.Path
+				if !seen[key] {
+					seen[key] = true
+					allEndpoints = append(allEndpoints, ep)
+				}
+			}
+		}
+	}
+
+	return allEndpoints
+}
+
+func (p *AutoswaggerPlugin) extractJSFileURLs(html, baseURL string) []string {
+	var urls []string
+	seen := map[string]bool{}
+
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`src=["']([^"']*\.js[^"']*)["']`),
+	}
+
+	jsBlacklist := map[string]bool{
+		"swagger-ui-bundle.js": true,
+		"swagger-ui-standalone-preset.js": true,
+		"swagger-ui.js": true,
+	}
+
+	for _, pat := range patterns {
+		matches := pat.FindAllStringSubmatch(html, -1)
+		for _, m := range matches {
+			if len(m) < 2 {
+				continue
+			}
+			u := m[1]
+			if seen[u] {
+				continue
+			}
+
+			lower := strings.ToLower(u)
+			skip := false
+			for bl := range jsBlacklist {
+				if strings.Contains(lower, bl) {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+
+			seen[u] = true
+			if strings.HasPrefix(u, "http") {
+				urls = append(urls, u)
+			} else if strings.HasPrefix(u, "/") {
+				urls = append(urls, baseURL+u)
+			} else {
+				urls = append(urls, baseURL+"/"+u)
+			}
+		}
+	}
+
+	return urls
+}
+
 func (p *AutoswaggerPlugin) extractSpecURLsFromHTML(html, baseURL string) []string {
 	var urls []string
 	seen := map[string]bool{}
@@ -535,6 +653,81 @@ func (p *AutoswaggerPlugin) extractInlineSpec(html string) *swaggerSpec {
 	return nil
 }
 
+func (p *AutoswaggerPlugin) extractEndpointsFromSwaggerUIHTML(html, baseURL string) []apiEndpoint {
+	var endpoints []apiEndpoint
+	seen := map[string]bool{}
+
+	pathPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?:href|to)=["']([^"']*(?:/api/[^"']*|/v\d+/[^"']*|/pet[^"']*|/user[^"']*|/store[^"']*))["']`),
+		regexp.MustCompile(`(?:path|oppath)["']?\s*:\s*["']([^"']+)["']`),
+		regexp.MustCompile(`class=["'][^"']*(?:opblock|operation|endpoint)[^"']*["'][^>]*>(?:[^<]*<[^>]*>)*?\s*(?:GET|POST|PUT|DELETE|PATCH)\s*(?:[^<]*<[^>]*>)*?\s*["']([^"']+)["']`),
+		regexp.MustCompile(`(?:data-path|path)=["']([^"']+)["']`),
+		regexp.MustCompile(`(/(?:api|v\d|pet|user|store|admin|auth|login|register|profile|order|product|item|resource|category|tag)[/-]?(?:[a-zA-Z0-9{}_-]*))`),
+	}
+
+	for _, pat := range pathPatterns {
+		matches := pat.FindAllStringSubmatch(html, -1)
+		for _, m := range matches {
+			if len(m) < 2 {
+				continue
+			}
+			path := m[1]
+			path = strings.TrimSpace(path)
+			if path == "" || len(path) < 2 {
+				continue
+			}
+			if !strings.HasPrefix(path, "/") {
+				path = "/" + path
+			}
+
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+
+			method := "GET"
+			endpoints = append(endpoints, apiEndpoint{
+				Method:      method,
+				Path:        p.resolvePathParams(path),
+				Description: "Discovered from Swagger UI page",
+			})
+		}
+	}
+
+	methodPathRe := regexp.MustCompile(`(?:<span[^>]*class=["'][^"']*(?:opblock|method|op-method)[^"']*["'][^>]*>([^<]*)</span>|<div[^>]*class=["'][^"']*(?:method)[^"']*["'][^>]*>([^<]*)</div>)[^<]*(?:<[^>]+>)*[^<]*(?:data-)?path=["']([^"']+)["']`)
+	methodMatches := methodPathRe.FindAllStringSubmatch(html, -1)
+	for _, m := range methodMatches {
+		if len(m) < 3 {
+			continue
+		}
+		methodPart := m[1]
+		if methodPart == "" {
+			methodPart = m[2]
+		}
+		path := m[len(m)-1]
+
+		method := strings.ToUpper(strings.TrimSpace(methodPart))
+		if method == "" || method == "OPTIONS" || method == "HEAD" {
+			method = "GET"
+		}
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		if seen[path+method] {
+			continue
+		}
+		seen[path+method] = true
+
+		endpoints = append(endpoints, apiEndpoint{
+			Method:      method,
+			Path:        p.resolvePathParams(path),
+			Description: "Discovered from Swagger UI operations",
+		})
+	}
+
+	return endpoints
+}
+
 func (p *AutoswaggerPlugin) fetchSpec(ctx context.Context, url string) *swaggerSpec {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -578,6 +771,29 @@ func (p *AutoswaggerPlugin) mergeEndpoints(specEndpoints, commonEndpoints []apiE
 	}
 
 	for _, ep := range commonEndpoints {
+		key := ep.Method + " " + ep.Path
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, ep)
+		}
+	}
+
+	return result
+}
+
+func (p *AutoswaggerPlugin) mergeEndpointsSlice(existingEndpoints, newEndpoints []apiEndpoint) []apiEndpoint {
+	seen := map[string]bool{}
+	var result []apiEndpoint
+
+	for _, ep := range existingEndpoints {
+		key := ep.Method + " " + ep.Path
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, ep)
+		}
+	}
+
+	for _, ep := range newEndpoints {
 		key := ep.Method + " " + ep.Path
 		if !seen[key] {
 			seen[key] = true
