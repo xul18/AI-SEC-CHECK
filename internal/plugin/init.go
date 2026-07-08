@@ -10,6 +10,7 @@ func RegisterAllPlugins(cfg func(name string) PluginConfig) error {
 		NewSensitiveWordPlugin(),
 		NewMcpSecPlugin(),
 		NewGarakPlugin(),
+		NewGarakCustomPlugin(),
 		NewAutoswaggerPlugin(),
 		NewRatelimitPlugin(),
 	}

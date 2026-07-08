@@ -1,5 +1,5 @@
 server:
-    addr: 127.0.0.1:8088
+    addr: 127.0.0.1:8089
 plugins:
     sensitive_word:
         enabled: true
@@ -20,6 +20,19 @@ plugins:
         api_key: ""
         max_concurrency: 3
         model_name: ""
+        timeout: 600
+    garak_custom:
+        enabled: true
+        api_key: ""
+        http_method: POST
+        body_template: '{"prompt": "$INPUT"}'
+        response_path: ""
+        response_json: true
+        headers: ""
+        rate_limit_codes: "429"
+        skip_codes: ""
+        verify_ssl: false
+        max_concurrency: 3
         timeout: 600
     infra_scan:
         enabled: true
@@ -44,7 +57,7 @@ plugins:
 ai:
     enabled: false
     provider: openai
-    base_url: http://gsqx.crccklyy.com:11434/v1
+    base_url: http://xxxx:11434/v1
     api_key: ""
     model: deepseek-r1:32b
     fallback_to_template: false

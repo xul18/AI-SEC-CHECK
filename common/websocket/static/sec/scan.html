@@ -284,7 +284,11 @@ body {
   display: grid;
   grid-template-columns: 200px 1fr auto;
   gap: 16px;
-  align-items: end;
+  align-items: center;
+}
+
+.form-grid > .form-group {
+  align-items: flex-start;
 }
 
 .form-group {
@@ -302,6 +306,7 @@ body {
 .form-group select,
 .form-group input[type="text"],
 .form-group input[type="password"] {
+  width: 100%;
   height: 40px;
   padding: 0 12px;
   background: var(--bg-input);
@@ -311,6 +316,7 @@ body {
   font-size: 14px;
   outline: none;
   transition: border-color var(--transition);
+  box-sizing: border-box;
 }
 
 .form-group select:focus,
@@ -350,7 +356,7 @@ body {
 }
 
 .btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -362,6 +368,11 @@ body {
   border-radius: var(--radius);
   cursor: pointer;
   transition: background var(--transition), opacity var(--transition);
+  box-sizing: border-box;
+}
+
+.btn svg {
+  flex-shrink: 0;
 }
 
 .btn-primary {
@@ -375,6 +386,8 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+
 
 .btn-secondary {
   background: transparent;
@@ -857,11 +870,11 @@ body {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Upload File
           </label>
-          <input type="file" id="fileInput" style="display:none" accept=".json,.yaml,.yml,.txt,.xml,.csv,.log,.conf,.cfg,.ini,.toml">
+          <input type="file" id="fileInput" style="display:none" accept=".json,.yaml,.yml,.txt,.xml,.csv,.log,.conf,.cfg,.ini,.toml,.docx">
           <div id="fileNameDisplay" class="file-name-display"></div>
         </div>
       </div>
-      <button id="scanBtn" class="btn btn-primary" onclick="startScan()">
+      <button id="scanBtn" class="btn btn-primary" onclick="startScan()" style="margin-top:16px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         Scan
       </button>
@@ -949,6 +962,7 @@ body {
     sensitive_word: ['text', 'file'],
     mcpsec: ['mcp_config', 'file'],
     garak: ['url'],
+    garak_custom: ['url'],
     autoswagger: ['url'],
     ratelimit: ['url']
   };
@@ -989,20 +1003,73 @@ body {
     'sensitive_word': 'Sensitive Word（敏感词检测）',
     'mcpsec': 'MCP Security（MCP安全扫描）',
     'garak': 'Garak（越狱检测）',
+    'garak_custom': 'Garak Custom（自定义越狱检测）',
     'autoswagger': 'Auto Swagger（API授权扫描）',
     'ratelimit': 'Ratelimit（限流检测）'
   };
+
+  var PLUGIN_ORDER = [
+    'infra_scan',
+    'garak',
+    'garak_custom',
+    'sensitive_word',
+    'mcpsec',
+    'autoswagger',
+    'ratelimit'
+  ];
 
   var selectedPlugin = null;
   var isScanning = false;
   var plugins = [];
   var uploadedFileContent = '';
+  var uploadedFileName = '';
   var progressTimer = null;
 
   var PLUGIN_PARAMS = {
     garak: [
       { key: 'target_name', label: 'Model Name', type: 'text', placeholder: 'e.g. qwen3:0.6b, gpt-4o-mini', hint: 'The model to test (as in OpenAI-compatible API)' },
       { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'sk-xxx (leave empty for local models)', hint: 'API key for authentication. Not needed for local Ollama/vLLM.' },
+      { key: 'probes', label: 'Probe Filter', type: 'select', options: [
+        { value: '', label: 'All Probes (32)' },
+        { value: 'prompt_injection', label: 'Prompt Injection (21)' },
+        { value: 'dan', label: 'DAN Jailbreak (2)' },
+        { value: 'roleplay', label: 'Roleplay (2)' },
+        { value: 'encoding', label: 'Encoding Bypass (2)' },
+        { value: 'privilege_escalation', label: 'Privilege Escalation (1)' },
+        { value: 'data_exfiltration', label: 'Data Exfiltration (2)' },
+        { value: 'safety_bypass', label: 'Safety Bypass (2)' },
+        { value: 'promptinject', label: 'PromptInject Only' }
+      ], hint: 'Select which probe categories to run' },
+      { key: 'max_concurrency', label: 'Concurrency', type: 'select', options: [
+        { value: '1', label: '1 (Slow)' },
+        { value: '3', label: '3 (Default)' },
+        { value: '5', label: '5 (Fast)' },
+        { value: '10', label: '10 (Aggressive)' }
+      ], hint: 'Number of concurrent probe requests' }
+    ],
+    garak_custom: [
+      { key: 'http_method', label: 'HTTP Method', type: 'select', options: [
+        { value: 'POST', label: 'POST (Default)' },
+        { value: 'GET', label: 'GET' },
+        { value: 'PUT', label: 'PUT' },
+        { value: 'PATCH', label: 'PATCH' },
+        { value: 'DELETE', label: 'DELETE' }
+      ], hint: 'HTTP method for API requests (GET/POST/PUT/PATCH/DELETE)' },
+      { key: 'body_template', label: 'Request Template', type: 'text', placeholder: `{"prompt": "$INPUT"}`, hint: 'Request body template. Use $INPUT for prompt, $KEY for API key. Supports JSON format.' },
+      { key: 'response_path', label: 'Response Field', type: 'text', placeholder: 'choices.0.message.content', hint: 'JSON field path to extract response content. Use $ prefix for JSONPath (e.g., $.choices[0].message.content)' },
+      { key: 'response_json', label: 'JSON Response', type: 'select', options: [
+        { value: 'true', label: 'Yes (Default)' },
+        { value: 'false', label: 'No' }
+      ], hint: 'Is the response in JSON format?' },
+      { key: 'headers', label: 'Custom Headers', type: 'text', placeholder: 'X-API-Key:$KEY;Content-Type:application/json', hint: 'Additional headers (format: Key1:Value1;Key2:Value2). Use $KEY for API key.' },
+      { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'sk-xxx or leave empty', hint: 'API key for authentication. Leave empty for unauthenticated endpoints.' },
+      { key: 'rate_limit_codes', label: 'Retry on Codes', type: 'text', placeholder: '429', hint: 'HTTP status codes to trigger retry (comma separated, e.g., 429, 503)' },
+      { key: 'skip_codes', label: 'Skip on Codes', type: 'text', placeholder: '', hint: 'HTTP status codes to skip without retry (comma separated)' },
+      { key: 'request_timeout', label: 'Timeout (sec)', type: 'text', placeholder: '60', hint: 'Request timeout in seconds (default: 60)' },
+      { key: 'verify_ssl', label: 'Verify SSL', type: 'select', options: [
+        { value: 'true', label: 'Yes' },
+        { value: 'false', label: 'No (Default)' }
+      ], hint: 'Enforce SSL certificate validation' },
       { key: 'probes', label: 'Probe Filter', type: 'select', options: [
         { value: '', label: 'All Probes (32)' },
         { value: 'prompt_injection', label: 'Prompt Injection (21)' },
@@ -1131,7 +1198,7 @@ body {
     });
 
     updateTargetUI();
-    select.addEventListener('change', updateTargetUI);
+    select.onchange = updateTargetUI;
 
     $('selectedPluginLabel').textContent = 'Plugin: ' + plugin.name;
     $('scanFormSection').classList.add('visible');
@@ -1220,12 +1287,18 @@ body {
     var reader = new FileReader();
     reader.onload = function(ev) {
       uploadedFileContent = ev.target.result;
+      uploadedFileName = file.name;
       $('fileNameDisplay').textContent = '✓ ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
       if ($('targetType').value === 'mcp_config') {
         $('targetInput').value = uploadedFileContent;
       }
     };
-    reader.readAsText(file);
+    
+    if (file.name.toLowerCase().endsWith('.docx')) {
+      reader.readAsDataURL(file);
+    } else {
+      reader.readAsText(file);
+    }
   });
 
   function escapeHtml(str) {
@@ -1453,7 +1526,6 @@ body {
         return;
       }
       target = uploadedFileContent;
-      targetType = 'text';
     } else if (targetType === 'mcp_config' && uploadedFileContent && !target) {
       target = uploadedFileContent;
     }
@@ -1478,6 +1550,7 @@ body {
       plugin_name: selectedPlugin.name,
       target_type: targetType,
       target: target,
+      file_name: uploadedFileName || '',
       ai_analyze: aiAnalyze
     };
 
@@ -1556,6 +1629,13 @@ body {
         return;
       }
       plugins = resp.data || [];
+      plugins.sort(function(a, b) {
+        var idxA = PLUGIN_ORDER.indexOf(a.name);
+        var idxB = PLUGIN_ORDER.indexOf(b.name);
+        if (idxA === -1) idxA = PLUGIN_ORDER.length;
+        if (idxB === -1) idxB = PLUGIN_ORDER.length;
+        return idxA - idxB;
+      });
       renderPlugins(plugins);
     })
     .catch(function(err) {

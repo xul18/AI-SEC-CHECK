@@ -923,6 +923,10 @@ func (p *AutoswaggerPlugin) testEndpoint(ctx context.Context, baseURL string, ep
 			return nil
 		}
 
+		if p.isHTMLRedirect(bodyStr) {
+			return nil
+		}
+
 		keyFindings := p.detectKeyLeaks(bodyStr, ep)
 		findings = append(findings, keyFindings...)
 
@@ -1083,6 +1087,43 @@ func (p *AutoswaggerPlugin) isStandardErrorPage(body string) bool {
 	for _, pat := range standardPatterns {
 		if strings.Contains(lower, pat) {
 			return true
+		}
+	}
+
+	return false
+}
+
+func (p *AutoswaggerPlugin) isHTMLRedirect(body string) bool {
+	if !strings.Contains(body, "<html") && !strings.Contains(body, "<HTML") {
+		return false
+	}
+
+	lower := strings.ToLower(body)
+	redirectPatterns := []string{
+		"<title>login</title>",
+		"<title>sign in</title>",
+		"<title>authentication</title>",
+		"<title>authorization</title>",
+		"<form",
+		"name=\"login\"",
+		"id=\"login\"",
+		"class=\"login\"",
+		"username",
+		"password",
+		"signin",
+		"sign-in",
+		"auth",
+		"csrf",
+		"session",
+	}
+
+	matchCount := 0
+	for _, pat := range redirectPatterns {
+		if strings.Contains(lower, pat) {
+			matchCount++
+			if matchCount >= 2 {
+				return true
+			}
 		}
 	}
 

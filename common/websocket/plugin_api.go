@@ -3,12 +3,14 @@ package websocket
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,12 +117,13 @@ func generateScanID() string {
 }
 
 type PluginScanRequest struct {
-	PluginName string            `json:"plugin_name" binding:"required"`
-	TargetType string            `json:"target_type" binding:"required"`
-	Target     string            `json:"target" binding:"required"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	PluginName string                 `json:"plugin_name" binding:"required"`
+	TargetType string                 `json:"target_type" binding:"required"`
+	Target     string                 `json:"target" binding:"required"`
+	FileName   string                 `json:"file_name,omitempty"`
+	Metadata   map[string]string      `json:"metadata,omitempty"`
 	Params     map[string]interface{} `json:"params,omitempty"`
-	AIAnalyze  bool              `json:"ai_analyze,omitempty"`
+	AIAnalyze  bool                   `json:"ai_analyze,omitempty"`
 }
 
 func (api *PluginAPI) HandlePluginScan(c *gin.Context) {
@@ -153,21 +156,6 @@ func (api *PluginAPI) HandlePluginScan(c *gin.Context) {
 		return
 	}
 
-	scanTarget := plugin.ScanTarget{
-		Type:     req.TargetType,
-		Value:    req.Target,
-		Metadata: req.Metadata,
-	}
-
-	if err := p.ValidateTarget(scanTarget); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  1,
-			"message": "invalid target: " + err.Error(),
-			"data":    nil,
-		})
-		return
-	}
-
 	if req.Params != nil {
 		cfg := plugin.PluginConfig(req.Params)
 		if err := p.Init(cfg); err != nil {
@@ -178,6 +166,49 @@ func (api *PluginAPI) HandlePluginScan(c *gin.Context) {
 			})
 			return
 		}
+	}
+
+	var targetValue = req.Target
+	var targetType = req.TargetType
+	if req.TargetType == "file" && req.FileName != "" {
+		if strings.HasSuffix(strings.ToLower(req.FileName), ".docx") && strings.HasPrefix(req.Target, "data:") {
+			base64Data := strings.SplitN(req.Target, ",", 2)[1]
+			decoded, err := base64.StdEncoding.DecodeString(base64Data)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"status":  1,
+					"message": "failed to decode docx file: " + err.Error(),
+					"data":    nil,
+				})
+				return
+			}
+			docxText, docxErr := plugin.ExtractTextFromDocx(decoded)
+			if docxErr != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"status":  1,
+					"message": "failed to parse docx file: " + docxErr.Error(),
+					"data":    nil,
+				})
+				return
+			}
+			targetValue = docxText
+		}
+		targetType = "text"
+	}
+
+	scanTarget := plugin.ScanTarget{
+		Type:     targetType,
+		Value:    targetValue,
+		Metadata: req.Metadata,
+	}
+
+	if err := p.ValidateTarget(scanTarget); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  1,
+			"message": "invalid target: " + err.Error(),
+			"data":    nil,
+		})
+		return
 	}
 
 	scanID := generateScanID()

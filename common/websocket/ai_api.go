@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -235,7 +236,28 @@ func (api *AIAPI) HandleChat(c *gin.Context) {
 		if req.FileContent != "" && (strings.Contains(strings.ToLower(req.Question), "敏感词") || 
 			strings.Contains(strings.ToLower(req.Question), "sensitive") ||
 			intent.PluginName == "sensitive_word") {
-			targetValue = req.FileContent
+			if strings.HasSuffix(strings.ToLower(req.FileName), ".docx") && strings.HasPrefix(req.FileContent, "data:") {
+				base64Data := strings.SplitN(req.FileContent, ",", 2)[1]
+				decoded, err := base64.StdEncoding.DecodeString(base64Data)
+				if err != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  1,
+						"message": "failed to decode docx file: " + err.Error(),
+					})
+					return
+				}
+				docxText, docxErr := plugin.ExtractTextFromDocx(decoded)
+				if docxErr != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  1,
+						"message": "failed to parse docx file: " + docxErr.Error(),
+					})
+					return
+				}
+				targetValue = docxText
+			} else {
+				targetValue = req.FileContent
+			}
 		} else {
 			targetValue = intent.TargetValue
 		}
@@ -331,7 +353,7 @@ func (api *AIAPI) executeScanWithTarget(intent ai.ScanIntent, targetValue string
 	}
 
 	scanTarget := plugin.ScanTarget{
-		Type:  plugin.TargetTypeText,
+		Type:  intent.TargetType,
 		Value: targetValue,
 	}
 

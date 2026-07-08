@@ -1,10 +1,14 @@
 package plugin
 
 import (
+	"archive/zip"
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	sensitive "github.com/LuYongwang/go-sensitive-word"
@@ -116,7 +120,19 @@ func (p *SensitiveWordPlugin) Scan(ctx context.Context, target ScanTarget) (*Sca
 			result.Summary = fmt.Sprintf("failed to read file: %s", readErr.Error())
 			return result, nil
 		}
-		text = string(data)
+		
+		fileName := target.Value
+		if strings.HasSuffix(strings.ToLower(fileName), ".docx") {
+			docxText, docxErr := ExtractTextFromDocx(data)
+			if docxErr != nil {
+				result.Status = StatusFailed
+				result.Summary = fmt.Sprintf("failed to parse docx file: %s", docxErr.Error())
+				return result, nil
+			}
+			text = docxText
+		} else {
+			text = string(data)
+		}
 	default:
 		result.Status = StatusFailed
 		result.Summary = fmt.Sprintf("unsupported target type: %s", target.Type)
@@ -253,4 +269,53 @@ func LoadWordsFromFile(path string) ([]string, error) {
 		}
 	}
 	return words, scanner.Err()
+}
+
+var xmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+func ExtractTextFromDocx(data []byte) (string, error) {
+	reader := bytes.NewReader(data)
+	zr, err := zip.NewReader(reader, int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("invalid docx file: %w", err)
+	}
+
+	var documentXML string
+	for _, f := range zr.File {
+		if f.Name == "word/document.xml" {
+			fh, err := f.Open()
+			if err != nil {
+				return "", fmt.Errorf("failed to open document.xml: %w", err)
+			}
+			content, err := io.ReadAll(fh)
+			fh.Close()
+			if err != nil {
+				return "", fmt.Errorf("failed to read document.xml: %w", err)
+			}
+			documentXML = string(content)
+			break
+		}
+	}
+
+	if documentXML == "" {
+		return "", fmt.Errorf("document.xml not found in docx file")
+	}
+
+	text := xmlTagRe.ReplaceAllString(documentXML, "")
+	text = strings.ReplaceAll(text, "&#160;", " ")
+	text = strings.ReplaceAll(text, "&nbsp;", " ")
+	
+	var result strings.Builder
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			if result.Len() > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(line)
+		}
+	}
+
+	return result.String(), nil
 }

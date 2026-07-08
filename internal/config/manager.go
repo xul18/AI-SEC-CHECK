@@ -22,6 +22,7 @@ type PluginItemConfig struct {
 type PluginsConfig struct {
 	SensitiveWord PluginItemConfig `yaml:"sensitive_word"`
 	Garak         PluginItemConfig `yaml:"garak"`
+	GarakCustom   PluginItemConfig `yaml:"garak_custom"`
 	InfraScan     PluginItemConfig `yaml:"infra_scan"`
 	McpSec        PluginItemConfig `yaml:"mcpsec"`
 	Autoswagger   PluginItemConfig `yaml:"autoswagger"`
@@ -94,6 +95,8 @@ func (c *AppConfig) GetPluginConfig(name string) plugin.PluginConfig {
 		item = c.Plugins.SensitiveWord
 	case "garak":
 		item = c.Plugins.Garak
+	case "garak_custom":
+		item = c.Plugins.GarakCustom
 	case "infra_scan":
 		item = c.Plugins.InfraScan
 	case "mcpsec":
@@ -184,6 +187,7 @@ func DefaultConfig() *AppConfig {
 		Plugins: PluginsConfig{
 			SensitiveWord: PluginItemConfig{Enabled: true},
 			Garak:         PluginItemConfig{Enabled: true},
+			GarakCustom:   PluginItemConfig{Enabled: true},
 			InfraScan:     PluginItemConfig{Enabled: true},
 			McpSec:        PluginItemConfig{Enabled: true},
 			Autoswagger:   PluginItemConfig{Enabled: true},
