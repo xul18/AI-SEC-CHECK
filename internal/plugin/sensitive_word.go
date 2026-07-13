@@ -5,13 +5,20 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	sensitive "github.com/LuYongwang/go-sensitive-word"
+	"github.com/ledongthuc/pdf"
+	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 type SensitiveWordPlugin struct {
@@ -114,30 +121,84 @@ func (p *SensitiveWordPlugin) Scan(ctx context.Context, target ScanTarget) (*Sca
 	case TargetTypeText:
 		text = target.Value
 	case TargetTypeFile:
-		data, readErr := os.ReadFile(target.Value)
-		if readErr != nil {
-			result.Status = StatusFailed
-			result.Summary = fmt.Sprintf("failed to read file: %s", readErr.Error())
-			return result, nil
+		var data []byte
+		var fileName string
+		
+		if strings.HasPrefix(target.Value, "data:") {
+			var fileData []byte
+			var contentType string
+			fileData, contentType, fileName = parseDataURL(target.Value)
+			data = fileData
+			
+			if fileName == "" {
+				if name, ok := target.Metadata["file_name"]; ok && name != "" {
+					fileName = name
+				} else if strings.Contains(contentType, "pdf") {
+					fileName = "temp.pdf"
+				} else if strings.Contains(contentType, "docx") {
+					fileName = "temp.docx"
+				} else if strings.Contains(contentType, "word") {
+					fileName = "temp.docx"
+				} else {
+					fileName = "temp.txt"
+				}
+			}
+		} else {
+			var readErr error
+			data, readErr = os.ReadFile(target.Value)
+			if readErr != nil {
+				result.Status = StatusFailed
+				result.Summary = fmt.Sprintf("failed to read file: %s", readErr.Error())
+				return result, nil
+			}
+			fileName = target.Value
 		}
 		
-		fileName := target.Value
-		if strings.HasSuffix(strings.ToLower(fileName), ".docx") {
+		ext := strings.ToLower(fileName[strings.LastIndex(fileName, "."):])
+		
+		switch ext {
+		case ".docx", ".docm", ".dotx", ".dotm":
 			docxText, docxErr := ExtractTextFromDocx(data)
 			if docxErr != nil {
 				result.Status = StatusFailed
-				result.Summary = fmt.Sprintf("failed to parse docx file: %s", docxErr.Error())
+				result.Summary = fmt.Sprintf("failed to parse document file: %s", docxErr.Error())
 				return result, nil
 			}
 			text = docxText
-		} else {
-			text = string(data)
+		case ".pdf":
+			pdfText, pdfErr := ExtractTextFromPDF(data)
+			if pdfErr != nil {
+				result.Status = StatusFailed
+				result.Summary = fmt.Sprintf("failed to parse pdf file: %s", pdfErr.Error())
+				return result, nil
+			}
+			text = pdfText
+		case ".xlsx", ".xlsb", ".xlsm", ".et", ".ett":
+			xlsxText, xlsxErr := ExtractTextFromXlsx(data)
+			if xlsxErr != nil {
+				result.Status = StatusFailed
+				result.Summary = fmt.Sprintf("failed to parse excel file: %s", xlsxErr.Error())
+				return result, nil
+			}
+			text = xlsxText
+		case ".doc", ".xls", ".wps":
+			legacyText, legacyErr := ExtractTextFromLegacyOffice(data, ext)
+			if legacyErr != nil {
+				result.Status = StatusFailed
+				result.Summary = fmt.Sprintf("failed to parse legacy office file: %s", legacyErr.Error())
+				return result, nil
+			}
+			text = legacyText
+		default:
+			text = decodeTextContent(data)
 		}
 	default:
 		result.Status = StatusFailed
 		result.Summary = fmt.Sprintf("unsupported target type: %s", target.Type)
 		return result, nil
 	}
+
+	text = p.extractAnswerText(text)
 
 	findings := p.scanText(text)
 	result.Findings = findings
@@ -318,4 +379,723 @@ func ExtractTextFromDocx(data []byte) (string, error) {
 	}
 
 	return result.String(), nil
+}
+
+func ExtractTextFromPDF(data []byte) (string, error) {
+	tmpFile, err := os.CreateTemp("", "scan_*.pdf")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return "", fmt.Errorf("failed to write temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	f, r, err := pdf.Open(tmpPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open pdf file: %w", err)
+	}
+	defer f.Close()
+
+	var result strings.Builder
+	for pageIndex := 1; pageIndex <= r.NumPage(); pageIndex++ {
+		p := r.Page(pageIndex)
+		if p.V.IsNull() {
+			continue
+		}
+
+		text, err := p.GetPlainText(nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to extract text from page %d: %w", pageIndex, err)
+		}
+
+		if result.Len() > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(text)
+	}
+
+	return cleanExtractedText(result.String()), nil
+}
+
+func ExtractTextFromXlsx(data []byte) (string, error) {
+	reader := bytes.NewReader(data)
+	zr, err := zip.NewReader(reader, int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("invalid xlsx file: %w", err)
+	}
+
+	var sharedStrings []string
+	for _, f := range zr.File {
+		if f.Name == "xl/sharedStrings.xml" {
+			fh, err := f.Open()
+			if err != nil {
+				return "", fmt.Errorf("failed to open sharedStrings.xml: %w", err)
+			}
+			content, err := io.ReadAll(fh)
+			fh.Close()
+			if err != nil {
+				return "", fmt.Errorf("failed to read sharedStrings.xml: %w", err)
+			}
+			sharedStrings = parseSharedStrings(string(content))
+			break
+		}
+	}
+
+	var result strings.Builder
+	for _, f := range zr.File {
+		if strings.HasPrefix(f.Name, "xl/worksheets/sheet") && strings.HasSuffix(f.Name, ".xml") {
+			fh, err := f.Open()
+			if err != nil {
+				continue
+			}
+			content, err := io.ReadAll(fh)
+			fh.Close()
+			if err != nil {
+				continue
+			}
+			sheetText := parseXlsxSheet(string(content), sharedStrings)
+			if result.Len() > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(sheetText)
+		}
+	}
+
+	return result.String(), nil
+}
+
+func parseSharedStrings(xmlContent string) []string {
+	var result []string
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(xmlContent))
+	if err != nil {
+		return result
+	}
+	doc.Find("t").Each(func(i int, s *goquery.Selection) {
+		result = append(result, s.Text())
+	})
+	return result
+}
+
+func parseXlsxSheet(xmlContent string, sharedStrings []string) string {
+	var result strings.Builder
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(xmlContent))
+	if err != nil {
+		return ""
+	}
+
+	doc.Find("row").Each(func(rowIdx int, row *goquery.Selection) {
+		row.Find("c").Each(func(colIdx int, cell *goquery.Selection) {
+			cellType, _ := cell.Attr("t")
+			if cellType == "s" {
+				vText := cell.Find("v").Text()
+				var idx int
+				fmt.Sscanf(vText, "%d", &idx)
+				if idx >= 0 && idx < len(sharedStrings) {
+					result.WriteString(sharedStrings[idx])
+				}
+			} else {
+				vText := cell.Find("v").Text()
+				result.WriteString(vText)
+			}
+			result.WriteString("\t")
+		})
+		result.WriteString("\n")
+	})
+
+	return result.String()
+}
+
+func ExtractTextFromLegacyOffice(data []byte, ext string) (string, error) {
+	if ext == ".doc" {
+		return extractTextFromDoc(data)
+	}
+	return extractTextFromXls(data)
+}
+
+func extractTextFromDoc(data []byte) (string, error) {
+	return extractAllTextFromBinary(data), nil
+}
+
+func extractAllTextFromBinary(data []byte) string {
+	var result strings.Builder
+	
+	i := 0
+	for i < len(data) {
+		if data[i] >= 0x20 && data[i] <= 0x7E {
+			start := i
+			for i < len(data) && (data[i] >= 0x20 && data[i] <= 0x7E || 
+				data[i] == 0x0A || data[i] == 0x0D || data[i] == 0x09) {
+				i++
+			}
+			if i-start >= 2 {
+				if result.Len() > 0 {
+					result.WriteString("\n")
+				}
+				result.WriteString(string(data[start:i]))
+			}
+		} else if i+1 < len(data) && data[i] != 0x00 && data[i+1] != 0x00 {
+			high := data[i]
+			low := data[i+1]
+			
+			if high >= 0x4E && high <= 0x9F {
+				code := uint16(low) | (uint16(high) << 8)
+				char := rune(code)
+				if char >= 0x4E00 && char <= 0x9FFF {
+					result.WriteRune(char)
+					i += 2
+					continue
+				}
+			}
+			
+			if high >= 0x81 && high <= 0xFE && low >= 0x40 && low <= 0xFE && low != 0x7F {
+				utf8Text, err := gbkToUTF8([]byte{high, low})
+				if err == nil {
+					result.WriteString(utf8Text)
+				}
+				i += 2
+				continue
+			}
+			
+			i++
+		} else if i+1 < len(data) && data[i] == 0x00 && data[i+1] != 0x00 {
+			code := uint16(data[i+1]) | (uint16(data[i]) << 8)
+			if code >= 0x4E00 && code <= 0x9FFF {
+				result.WriteRune(rune(code))
+				i += 2
+				continue
+			}
+			i++
+		} else {
+			i++
+		}
+	}
+	
+	return cleanExtractedText(result.String())
+}
+
+func extractUTF16Text(data []byte) string {
+	var result strings.Builder
+	i := 0
+	
+	for i < len(data)-1 {
+		if data[i] == 0x00 && data[i+1] != 0x00 {
+			start := i
+			for i < len(data)-1 && data[i] == 0x00 && data[i+1] != 0x00 {
+				if data[i+1] >= 0x20 && data[i+1] <= 0x7E {
+					result.WriteByte(data[i+1])
+				}
+				i += 2
+			}
+			if i-start >= 4 {
+				if result.Len() > 0 && result.String()[result.Len()-1] != '\n' {
+					result.WriteString("\n")
+				}
+			}
+		} else if data[i] != 0x00 && data[i+1] != 0x00 {
+			high := data[i]
+			low := data[i+1]
+			if high >= 0x4E && high <= 0x9F {
+				code := uint16(low) | (uint16(high) << 8)
+				result.WriteRune(rune(code))
+				i += 2
+				continue
+			} else if high >= 0x81 && high <= 0xFE && low >= 0x40 && low <= 0xFE && low != 0x7F {
+				utf8Text, err := gbkToUTF8([]byte{high, low})
+				if err == nil {
+					result.WriteString(utf8Text)
+				}
+				i += 2
+				continue
+			}
+			i++
+		} else {
+			i++
+		}
+	}
+	
+	return cleanExtractedText(result.String())
+}
+
+func extractTextFromXls(data []byte) (string, error) {
+	return extractTextFromOLE2Fallback(data), nil
+}
+
+func extractRTFFromOLE2(data []byte) string {
+	rtfStart := bytes.Index(data, []byte("{\\rtf"))
+	if rtfStart == -1 {
+		rtfStart = bytes.Index(data, []byte("{\\RTF"))
+	}
+	if rtfStart == -1 {
+		return ""
+	}
+	
+	rtfEnd := bytes.LastIndex(data[rtfStart:], []byte("}"))
+	if rtfEnd == -1 {
+		return ""
+	}
+	
+	rtfData := data[rtfStart : rtfStart+rtfEnd+1]
+	return parseRTF(string(rtfData))
+}
+
+var rtfTagRe = regexp.MustCompile(`\\[a-z]+[0-9]*\s?`)
+var rtfGroupRe = regexp.MustCompile(`\{[^}]*\}`)
+var rtfSpecialCharRe = regexp.MustCompile(`\\([nrtfb])`)
+var rtfHexCharRe = regexp.MustCompile(`\\[uU]([0-9a-fA-F]{4})`)
+
+func parseRTF(rtf string) string {
+	rtf = strings.ReplaceAll(rtf, "\\{", "{")
+	rtf = strings.ReplaceAll(rtf, "\\}", "}")
+	rtf = strings.ReplaceAll(rtf, "\\\\", "\\")
+	
+	for {
+		prev := rtf
+		rtf = rtfGroupRe.ReplaceAllString(rtf, "")
+		if rtf == prev {
+			break
+		}
+	}
+	
+	rtf = rtfTagRe.ReplaceAllString(rtf, "")
+	
+	rtf = rtfSpecialCharRe.ReplaceAllStringFunc(rtf, func(match string) string {
+		switch match[1] {
+		case 'n':
+			return "\n"
+		case 'r':
+			return "\r"
+		case 't':
+			return "\t"
+		case 'f':
+			return "\f"
+		case 'b':
+			return ""
+		default:
+			return ""
+		}
+	})
+	
+	rtf = rtfHexCharRe.ReplaceAllStringFunc(rtf, func(match string) string {
+		if len(match) >= 6 {
+			if code, err := strconv.ParseInt(match[2:], 16, 32); err == nil {
+				return string(rune(code))
+			}
+		}
+		return ""
+	})
+	
+	return cleanExtractedText(rtf)
+}
+
+func extractTextFromWordDocument(data []byte) string {
+	wordDocMarker := []byte("WordDocument")
+	idx := bytes.Index(data, wordDocMarker)
+	if idx == -1 {
+		return ""
+	}
+	
+	idx += len(wordDocMarker)
+	for idx < len(data) && data[idx] == 0 {
+		idx++
+	}
+	
+	if idx >= len(data) {
+		return ""
+	}
+	
+	var result strings.Builder
+	i := idx
+	
+	for i < len(data) {
+		if data[i] == 0x0D || data[i] == 0x0A {
+			if result.Len() > 0 && result.String()[result.Len()-1] != '\n' {
+				result.WriteString("\n")
+			}
+			for i < len(data) && (data[i] == 0x0D || data[i] == 0x0A) {
+				i++
+			}
+			continue
+		}
+		
+		if data[i] >= 0x20 && data[i] <= 0x7E {
+			result.WriteByte(data[i])
+			i++
+		} else if data[i] >= 0x80 && data[i] <= 0xFF && i+1 < len(data) {
+			high := data[i]
+			low := data[i+1]
+			
+			if high >= 0x81 && high <= 0xFE && low >= 0x40 && low <= 0xFE && low != 0x7F {
+				utf8Text, err := gbkToUTF8([]byte{high, low})
+				if err == nil {
+					result.WriteString(utf8Text)
+				} else {
+					result.WriteByte(high)
+					result.WriteByte(low)
+				}
+			} else if data[i+1] == 0x00 && data[i] != 0x00 {
+				result.WriteByte(data[i])
+			}
+			i += 2
+		} else if data[i] == 0x00 && i+1 < len(data) && data[i+1] != 0x00 {
+			if data[i+1] >= 0x20 && data[i+1] <= 0x7E {
+				result.WriteByte(data[i+1])
+			}
+			i += 2
+		} else {
+			i++
+		}
+	}
+	
+	return cleanExtractedText(result.String())
+}
+
+func extractTextFromOLE2Fallback(data []byte) string {
+	var result strings.Builder
+	
+	i := 0
+	for i < len(data) {
+		if data[i] >= 0x20 && data[i] <= 0x7E {
+			start := i
+			for i < len(data) && (data[i] >= 0x20 && data[i] <= 0x7E || 
+				data[i] == 0x0A || data[i] == 0x0D || data[i] == 0x09) {
+				i++
+			}
+			if i-start > 3 {
+				if result.Len() > 0 {
+					result.WriteString("\n")
+				}
+				result.WriteString(string(data[start:i]))
+			}
+		} else if data[i] >= 0x80 && data[i] <= 0xFF && i+1 < len(data) {
+			high := data[i]
+			low := data[i+1]
+			
+			if high >= 0x81 && high <= 0xFE && low >= 0x40 && low <= 0xFE && low != 0x7F {
+				utf8Text, err := gbkToUTF8([]byte{high, low})
+				if err == nil {
+					result.WriteString(utf8Text)
+				}
+			}
+			i += 2
+		} else if data[i] == 0x00 && i+1 < len(data) && data[i+1] != 0x00 && data[i+1] >= 0x20 && data[i+1] <= 0x7E {
+			result.WriteByte(data[i+1])
+			i += 2
+		} else {
+			i++
+		}
+	}
+	
+	return cleanExtractedText(result.String())
+}
+
+func gbkToUTF8(gbkData []byte) (string, error) {
+	reader := transform.NewReader(bytes.NewReader(gbkData), simplifiedchinese.GBK.NewDecoder())
+	utf8Data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+	return string(utf8Data), nil
+}
+
+func cleanExtractedText(text string) string {
+	text = strings.ReplaceAll(text, "\x00", "")
+	text = strings.ReplaceAll(text, "\x07", "")
+	text = strings.ReplaceAll(text, "\x08", "")
+	text = strings.ReplaceAll(text, "\x0b", "")
+	text = strings.ReplaceAll(text, "\x0c", "")
+	text = strings.ReplaceAll(text, "\x0e", "")
+	text = strings.ReplaceAll(text, "\x0f", "")
+	
+	lines := strings.Split(text, "\n")
+	var cleanedLines []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			cleanedLines = append(cleanedLines, line)
+		}
+	}
+	
+	return strings.Join(cleanedLines, "\n")
+}
+
+func (p *SensitiveWordPlugin) extractAnswerText(text string) string {
+	if !p.isChatSession(text) {
+		return text
+	}
+
+	var answerTexts []string
+
+	if strings.Contains(text, "{") && strings.Contains(text, "}") {
+		var jsonData interface{}
+		if err := json.Unmarshal([]byte(text), &jsonData); err == nil {
+			answerTexts = extractAnswerFromJSON(jsonData)
+		} else {
+			answerTexts = extractAnswerFromNonStandardJSON(text)
+		}
+	}
+
+	if len(answerTexts) == 0 {
+		answerTexts = extractAnswerFromText(text)
+	}
+
+	if len(answerTexts) > 0 {
+		return strings.Join(answerTexts, "\n")
+	}
+
+	return text
+}
+
+var jsonFieldRe = regexp.MustCompile(`["'](answer|content|response|reply)["']\s*[:=]\s*(["']([^"']*)["']|(\[[^\]]*\])|(\{[^\}]*\})|(\d+)|([^\s,}\]]+))`)
+var jsonStringRe = regexp.MustCompile(`["']([^"']*)["']`)
+
+func extractAnswerFromNonStandardJSON(text string) []string {
+	var result []string
+
+	matches := jsonFieldRe.FindAllStringSubmatch(text, -1)
+	for _, match := range matches {
+		if len(match) >= 3 {
+			fieldName := strings.ToLower(match[1])
+			if fieldName == "answer" || fieldName == "content" || fieldName == "response" || fieldName == "reply" {
+				var value string
+				if len(match) >= 4 && match[4] != "" {
+					value = match[4]
+				} else if len(match) >= 3 && match[3] != "" {
+					value = match[3]
+				} else if len(match) >= 5 && match[5] != "" {
+					value = match[5]
+				} else if len(match) >= 6 && match[6] != "" {
+					value = match[6]
+				} else if len(match) >= 7 && match[7] != "" {
+					value = match[7]
+				}
+
+				if value != "" && len(value) > 2 {
+					if strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}") {
+						var nestedData interface{}
+						if json.Unmarshal([]byte(value), &nestedData) == nil {
+							result = append(result, extractAnswerFromJSON(nestedData)...)
+						}
+					} else if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+						var nestedData interface{}
+						if json.Unmarshal([]byte(value), &nestedData) == nil {
+							result = append(result, extractAnswerFromJSON(nestedData)...)
+						}
+					} else {
+						result = append(result, value)
+					}
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+func (p *SensitiveWordPlugin) isChatSession(text string) bool {
+	chatIndicators := []string{
+		"\"role\":", "\"role\": \"", "role:", "Role:",
+		"\"answer\":", "\"answer\": \"", "answer:", "Answer:",
+		"\"content\":", "\"content\": \"", "content:", "Content:",
+		"assistant", "Assistant", "模型回答", "AI回答", "回复内容",
+	}
+
+	for _, indicator := range chatIndicators {
+		if strings.Contains(text, indicator) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func extractAnswerFromJSON(data interface{}) []string {
+	var result []string
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		for key, val := range v {
+			lowerKey := strings.ToLower(key)
+			if lowerKey == "answer" || lowerKey == "content" || lowerKey == "response" || lowerKey == "reply" {
+				if str, ok := val.(string); ok {
+					result = append(result, str)
+				}
+			} else if lowerKey == "messages" || lowerKey == "chat" || lowerKey == "conversation" {
+				result = append(result, extractAnswerFromJSON(val)...)
+			} else {
+				result = append(result, extractAnswerFromJSON(val)...)
+			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			result = append(result, extractAnswerFromJSON(item)...)
+		}
+	}
+
+	return result
+}
+
+func extractAnswerFromText(text string) []string {
+	var result []string
+
+	answerKeywords := []string{
+		"answer:", "Answer:", "ANSWER:",
+		"content:", "Content:", "CONTENT:",
+		"response:", "Response:", "RESPONSE:",
+		"reply:", "Reply:", "REPLY:",
+		"assistant:", "Assistant:",
+		"模型回答:", "AI回答:", "回复内容:",
+		"assistant\n", "Assistant\n",
+		"模型回答\n", "AI回答\n",
+	}
+
+	for _, keyword := range answerKeywords {
+		parts := strings.Split(text, keyword)
+		if len(parts) > 1 {
+			for i := 1; i < len(parts); i++ {
+				part := strings.TrimSpace(parts[i])
+				if part != "" {
+					result = append(result, part)
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+func parseDataURL(dataURL string) ([]byte, string, string) {
+	parts := strings.SplitN(dataURL, ",", 2)
+	if len(parts) != 2 {
+		return nil, "", ""
+	}
+	
+	header := parts[0]
+	data := parts[1]
+	
+	var contentType string
+	var fileName string
+	
+	headerParts := strings.Split(header, ";")
+	for _, part := range headerParts {
+		if strings.HasPrefix(part, "data:") {
+			contentType = strings.TrimPrefix(part, "data:")
+		} else if strings.HasPrefix(part, "filename=") {
+			fileName = strings.TrimPrefix(part, "filename=")
+			fileName = strings.Trim(fileName, "\"'")
+		}
+	}
+	
+	var decoded []byte
+	var err error
+	if strings.Contains(header, ";base64") {
+		decoded, err = base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			decoded, err = base64.URLEncoding.DecodeString(data)
+		}
+	} else {
+		decoded = []byte(data)
+	}
+	
+	if err != nil {
+		return nil, contentType, fileName
+	}
+	
+	return decoded, contentType, fileName
+}
+
+func decodeTextContent(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	
+	data = removeUTF8BOM(data)
+	
+	if isUTF8(data) {
+		return string(data)
+	}
+	
+	return convertGBKToUTF8(data)
+}
+
+func removeUTF8BOM(data []byte) []byte {
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		return data[3:]
+	}
+	return data
+}
+
+func isUTF8(data []byte) bool {
+	i := 0
+	for i < len(data) {
+		if (data[i] & 0x80) == 0x00 {
+			i++
+		} else if (data[i] & 0xE0) == 0xC0 {
+			if i+1 >= len(data) {
+				return false
+			}
+			if (data[i+1] & 0xC0) != 0x80 {
+				return false
+			}
+			i += 2
+		} else if (data[i] & 0xF0) == 0xE0 {
+			if i+2 >= len(data) {
+				return false
+			}
+			if (data[i+1] & 0xC0) != 0x80 || (data[i+2] & 0xC0) != 0x80 {
+				return false
+			}
+			i += 3
+		} else if (data[i] & 0xF8) == 0xF0 {
+			if i+3 >= len(data) {
+				return false
+			}
+			if (data[i+1] & 0xC0) != 0x80 || (data[i+2] & 0xC0) != 0x80 || (data[i+3] & 0xC0) != 0x80 {
+				return false
+			}
+			i += 4
+		} else {
+			return false
+		}
+	}
+	return true
+}
+
+func convertGBKToUTF8(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	
+	var result strings.Builder
+	
+	i := 0
+	for i < len(data) {
+		if data[i] < 0x80 {
+			result.WriteByte(data[i])
+			i++
+		} else {
+			if i+1 < len(data) {
+				gbkCode := int(data[i])<<8 | int(data[i+1])
+				utf8Str := gbkToUTF8Char(gbkCode)
+				result.WriteString(utf8Str)
+				i += 2
+			} else {
+				result.WriteByte(data[i])
+				i++
+			}
+		}
+	}
+	
+	return result.String()
+}
+
+func gbkToUTF8Char(gbkCode int) string {
+	if gbkCode >= 0x8140 && gbkCode <= 0xFEFE {
+		return string([]rune{rune(gbkCode + 0x8080)})
+	}
+	return string([]byte{byte(gbkCode >> 8), byte(gbkCode & 0xFF)})
 }

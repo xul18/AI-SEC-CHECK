@@ -8,6 +8,9 @@ echo   Based on AI-Infra-Guard by Tencent Zhuque Lab
 echo ============================================================
 echo.
 
+set "ROOTDIR=%~dp0"
+cd /d "%ROOTDIR%"
+
 set "BINARY=ai-sec-check.exe"
 set "ADDR=127.0.0.1:8088"
 

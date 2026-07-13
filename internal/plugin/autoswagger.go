@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"ai-sec-check/internal/scanlogger"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -13,10 +14,10 @@ import (
 )
 
 type AutoswaggerPlugin struct {
-	config    PluginConfig
-	client    *http.Client
+	config         PluginConfig
+	client         *http.Client
 	apiKeyPatterns map[string]*regexp.Regexp
-	piiPatterns   map[string]*regexp.Regexp
+	piiPatterns    map[string]*regexp.Regexp
 }
 
 func NewAutoswaggerPlugin() *AutoswaggerPlugin {
@@ -56,21 +57,21 @@ func (p *AutoswaggerPlugin) Init(config PluginConfig) error {
 
 func (p *AutoswaggerPlugin) initPatterns() {
 	p.apiKeyPatterns = map[string]*regexp.Regexp{
-		"AWS API Key":       regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
-		"GitHub Token":      regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{36}`),
-		"Stripe API Key":    regexp.MustCompile(`sk_live_[0-9a-zA-Z]{24}`),
-		"RSA Private Key":   regexp.MustCompile(`-----BEGIN RSA PRIVATE KEY-----`),
-		"SSH Private Key":   regexp.MustCompile(`-----BEGIN OPENSSH PRIVATE KEY-----`),
-		"PGP Private Key":   regexp.MustCompile(`-----BEGIN PGP PRIVATE KEY BLOCK-----`),
-		"Slack Token":       regexp.MustCompile(`xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,34}`),
-		"Google API Key":    regexp.MustCompile(`AIza[0-9A-Za-z\-_]{35}`),
-		"JWT Token":         regexp.MustCompile(`eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+`),
-		"Generic Secret":    regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key|apikey|access_key)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{8,}`),
+		"AWS API Key":     regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
+		"GitHub Token":    regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{36}`),
+		"Stripe API Key":  regexp.MustCompile(`sk_live_[0-9a-zA-Z]{24}`),
+		"RSA Private Key": regexp.MustCompile(`-----BEGIN RSA PRIVATE KEY-----`),
+		"SSH Private Key": regexp.MustCompile(`-----BEGIN OPENSSH PRIVATE KEY-----`),
+		"PGP Private Key": regexp.MustCompile(`-----BEGIN PGP PRIVATE KEY BLOCK-----`),
+		"Slack Token":     regexp.MustCompile(`xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,34}`),
+		"Google API Key":  regexp.MustCompile(`AIza[0-9A-Za-z\-_]{35}`),
+		"JWT Token":       regexp.MustCompile(`eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+`),
+		"Generic Secret":  regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key|apikey|access_key)\s*[:=]\s*['"]?[A-Za-z0-9\-_]{8,}`),
 	}
 	p.piiPatterns = map[string]*regexp.Regexp{
-		"Email":      regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`),
-		"Phone":      regexp.MustCompile(`(?:(?:\+?86)?\s*-?)?(?:1[3-9]\d{9})`),
-		"ID Card":    regexp.MustCompile(`[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`),
+		"Email":       regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`),
+		"Phone":       regexp.MustCompile(`(?:(?:\+?86)?\s*-?)?(?:1[3-9]\d{9})`),
+		"ID Card":     regexp.MustCompile(`[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`),
 		"Credit Card": regexp.MustCompile(`\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13}|6(?:011|5\d{2})\d{12})\b`),
 	}
 }
@@ -90,6 +91,8 @@ func (p *AutoswaggerPlugin) Scan(ctx context.Context, target ScanTarget) (*ScanR
 	}
 
 	baseURL := p.extractBaseURL(targetURL)
+
+	scanlogger.ScanStart(p.Name(), target.Value, p.Category())
 
 	var allFindings []Finding
 	var rawOutputs []string
@@ -163,6 +166,9 @@ func (p *AutoswaggerPlugin) Scan(ctx context.Context, target ScanTarget) (*ScanR
 
 	result.Findings = allFindings
 	result.RawOutput = strings.Join(rawOutputs, "\n")
+
+	scanlogger.ScanComplete(p.Name(), target.Value, p.Category(), len(allFindings), float64(totalEndpoints))
+
 	return result, nil
 }
 
@@ -452,9 +458,9 @@ func (p *AutoswaggerPlugin) extractJSFileURLs(html, baseURL string) []string {
 	}
 
 	jsBlacklist := map[string]bool{
-		"swagger-ui-bundle.js": true,
+		"swagger-ui-bundle.js":            true,
 		"swagger-ui-standalone-preset.js": true,
-		"swagger-ui.js": true,
+		"swagger-ui.js":                   true,
 	}
 
 	for _, pat := range patterns {
@@ -918,6 +924,8 @@ func (p *AutoswaggerPlugin) testEndpoint(ctx context.Context, baseURL string, ep
 	var findings []Finding
 	bodyStr := string(body)
 
+	scanlogger.EndpointTest(p.Name(), baseURL, ep.Method, ep.Path, resp.StatusCode, bodyStr, 0)
+
 	if resp.StatusCode == 200 {
 		if p.isErrorResponse(bodyStr) {
 			return nil
@@ -972,6 +980,10 @@ func (p *AutoswaggerPlugin) testEndpoint(ctx context.Context, baseURL string, ep
 			Remediation: "Implement proper error handling that does not expose internal server details.",
 			Source:      "autoswagger",
 		})
+	}
+
+	for _, f := range findings {
+		scanlogger.Finding(p.Name(), baseURL, f.RuleID, f.Severity, f.Title, f.Description, f.Evidence)
 	}
 
 	return findings
@@ -1115,6 +1127,8 @@ func (p *AutoswaggerPlugin) isHTMLRedirect(body string) bool {
 		"auth",
 		"csrf",
 		"session",
+		"<head",
+		"<script",
 	}
 
 	matchCount := 0

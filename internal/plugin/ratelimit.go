@@ -49,15 +49,16 @@ func (p *RatelimitPlugin) Init(config PluginConfig) error {
 }
 
 type loadTestConfig struct {
-	Duration   int
-	MinThreads int
-	MaxThreads int
-	RampUp     int
-	Method     string
-	Path       string
-	Headers    map[string]string
-	Body       string
-	Thresholds map[string]int
+	Duration       int
+	MinThreads     int
+	MaxThreads     int
+	RampUp         int
+	ThreadsLimit   int
+	Method         string
+	Path           string
+	Headers        map[string]string
+	Body           string
+	Thresholds     map[string]int
 }
 
 type requestResult struct {
@@ -102,89 +103,68 @@ func (p *RatelimitPlugin) Scan(ctx context.Context, target ScanTarget) (*ScanRes
 
 	startTime := time.Now()
 
-	threadRange := ltConfig.MaxThreads - ltConfig.MinThreads
-	rampUpDuration := time.Duration(ltConfig.RampUp) * time.Second
-
 	ReportProgress(ctx, 0, ltConfig.Duration, fmt.Sprintf("Starting load test: %d→%d threads, %ds duration, %ds ramp-up...",
 		ltConfig.MinThreads, ltConfig.MaxThreads, ltConfig.Duration, ltConfig.RampUp))
 
 	var wg sync.WaitGroup
 
-loop:
-	for i := 0; i < ltConfig.MaxThreads; i++ {
+	totalRequestsLimit := ltConfig.ThreadsLimit
+	if totalRequestsLimit <= 0 {
+		totalRequestsLimit = 1000000
+	}
+
+	sem := make(chan struct{}, ltConfig.MaxThreads)
+
+	ReportProgress(ctx, 0, totalRequestsLimit, fmt.Sprintf("Starting load test: %d max threads, %d total requests limit, %ds duration...",
+		ltConfig.MaxThreads, totalRequestsLimit, ltConfig.Duration))
+
+	for i := 0; i < totalRequestsLimit; i++ {
 		select {
 		case <-ctx.Done():
-			break loop
+			break
 		default:
 		}
 
-		if rampUpDuration > 0 && threadRange > 0 && i >= ltConfig.MinThreads {
-			threadIndex := i - ltConfig.MinThreads
-			interval := rampUpDuration / time.Duration(threadRange)
-			delay := time.Duration(threadIndex) * interval
-			timer := time.NewTimer(delay)
-			select {
-			case <-timer.C:
-			case <-ctx.Done():
-				timer.Stop()
-				break loop
-			}
+		if time.Now().After(deadline) {
+			break
 		}
 
 		wg.Add(1)
-		go func(workerID int) {
+		sem <- struct{}{}
+		go func(taskID int) {
 			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
+			defer func() { <-sem }()
 
-				if time.Now().After(deadline) {
-					return
-				}
+			atomic.AddInt64(&totalRequests, 1)
 
-				reqStart := time.Now()
-				statusCode, err := p.sendRequest(ctx, baseURL, ltConfig)
-				reqDuration := time.Since(reqStart)
+			reqStart := time.Now()
+			statusCode, err := p.sendRequest(ctx, baseURL, ltConfig)
+			reqDuration := time.Since(reqStart)
 
-				newTotal := atomic.AddInt64(&totalRequests, 1)
-				if err != nil {
-					atomic.AddInt64(&failedRequests, 1)
-				} else {
-					atomic.AddInt64(&successRequests, 1)
-					count, _ := statusCodes.LoadOrStore(statusCode, new(int64))
-					atomic.AddInt64(count.(*int64), 1)
-				}
-				atomic.AddInt64(&totalDuration, int64(reqDuration))
-
-				if newTotal%10 == 0 {
-					elapsed := time.Since(startTime)
-					rps := float64(newTotal) / elapsed.Seconds()
-					activeThreads := ltConfig.MinThreads
-					if threadRange > 0 && rampUpDuration > 0 {
-						elapsedRatio := float64(elapsed) / float64(rampUpDuration)
-						if elapsedRatio > 1.0 {
-							elapsedRatio = 1.0
-						}
-						activeThreads = ltConfig.MinThreads + int(float64(threadRange)*elapsedRatio)
-						if activeThreads > ltConfig.MaxThreads {
-							activeThreads = ltConfig.MaxThreads
-						}
-					}
-					ReportProgress(ctx, int(elapsed.Seconds()), ltConfig.Duration,
-						fmt.Sprintf("Load testing: %d requests, ~%d threads (%.0f req/s)", newTotal, activeThreads, rps))
-				}
-
-				mu.Lock()
-				results = append(results, requestResult{
-					StatusCode: statusCode,
-					Duration:   reqDuration,
-					Error:      err,
-				})
-				mu.Unlock()
+			if err != nil {
+				atomic.AddInt64(&failedRequests, 1)
+			} else {
+				atomic.AddInt64(&successRequests, 1)
+				count, _ := statusCodes.LoadOrStore(statusCode, new(int64))
+				atomic.AddInt64(count.(*int64), 1)
 			}
+			atomic.AddInt64(&totalDuration, int64(reqDuration))
+
+			newTotal := atomic.LoadInt64(&totalRequests)
+			if newTotal%10 == 0 {
+				elapsed := time.Since(startTime)
+				rps := float64(newTotal) / elapsed.Seconds()
+				ReportProgress(ctx, int(newTotal), totalRequestsLimit,
+					fmt.Sprintf("Load testing: %d requests (%.0f req/s)", newTotal, rps))
+			}
+
+			mu.Lock()
+			results = append(results, requestResult{
+				StatusCode: statusCode,
+				Duration:   reqDuration,
+				Error:      err,
+			})
+			mu.Unlock()
 		}(i)
 	}
 
@@ -229,11 +209,13 @@ loop:
 
 func (p *RatelimitPlugin) parseConfig(target ScanTarget) loadTestConfig {
 	lt := loadTestConfig{
-		Duration:   30,
-		MinThreads: 10,
-		MaxThreads: 200,
-		RampUp:     10,
-		Method:     "GET",
+		Duration:     30,
+		MinThreads:   10,
+		MaxThreads:   200,
+		RampUp:       10,
+		ThreadsLimit: 0,
+		Method:       "GET",
+		Body:         "{}",
 	}
 
 	if v, ok := target.Metadata["duration"]; ok {
@@ -264,6 +246,11 @@ func (p *RatelimitPlugin) parseConfig(target ScanTarget) loadTestConfig {
 			lt.RampUp = n
 		}
 	}
+	if v, ok := target.Metadata["threads_limit"]; ok {
+		if n, err := parseInt(v); err == nil && n >= 0 {
+			lt.ThreadsLimit = n
+		}
+	}
 	if v, ok := target.Metadata["method"]; ok && v != "" {
 		lt.Method = strings.ToUpper(v)
 	}
@@ -273,11 +260,17 @@ func (p *RatelimitPlugin) parseConfig(target ScanTarget) loadTestConfig {
 	if v, ok := target.Metadata["headers"]; ok && v != "" {
 		lt.Headers = parseHeaders(v)
 	}
+	if v, ok := target.Metadata["body"]; ok && v != "" {
+		lt.Body = v
+	}
 
 	if lt.Duration > 300 {
 		lt.Duration = 300
 	}
-	if lt.MaxThreads > 500 {
+	if lt.ThreadsLimit > 0 && lt.MaxThreads > lt.ThreadsLimit {
+		lt.MaxThreads = lt.ThreadsLimit
+	}
+	if lt.ThreadsLimit == 0 && lt.MaxThreads > 500 {
 		lt.MaxThreads = 500
 	}
 	if lt.MinThreads > lt.MaxThreads {
@@ -331,7 +324,12 @@ func (p *RatelimitPlugin) sendRequest(ctx context.Context, baseURL string, lt lo
 		url = baseURL + lt.Path
 	}
 
-	req, err := http.NewRequestWithContext(ctx, lt.Method, url, nil)
+	var bodyReader io.Reader
+	if lt.Body != "" && (lt.Method == "POST" || lt.Method == "PUT" || lt.Method == "PATCH") {
+		bodyReader = strings.NewReader(lt.Body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, lt.Method, url, bodyReader)
 	if err != nil {
 		return 0, err
 	}
@@ -339,6 +337,10 @@ func (p *RatelimitPlugin) sendRequest(ctx context.Context, baseURL string, lt lo
 	req.Header.Set("User-Agent", "AI-SEC-CHECK-LoadTest/1.0")
 	req.Header.Set("Accept", "*/*")
 	req.Close = false
+
+	if lt.Body != "" && (lt.Method == "POST" || lt.Method == "PUT" || lt.Method == "PATCH") {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	for k, v := range lt.Headers {
 		req.Header.Set(k, v)
@@ -348,7 +350,8 @@ func (p *RatelimitPlugin) sendRequest(ctx context.Context, baseURL string, lt lo
 	if err != nil {
 		return 0, err
 	}
-	io.Copy(io.Discard, resp.Body)
+
+	_, _ = io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	resp.Body.Close()
 
 	return resp.StatusCode, nil

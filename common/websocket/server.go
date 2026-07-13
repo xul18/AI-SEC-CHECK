@@ -35,6 +35,7 @@ import (
 	"ai-sec-check/internal/ai"
 	"ai-sec-check/internal/config"
 	"ai-sec-check/internal/plugin"
+	"ai-sec-check/internal/scanlogger"
 	"ai-sec-check/internal/storage"
 	"ai-sec-check/pkg/database"
 	"github.com/gin-gonic/gin"
@@ -49,6 +50,8 @@ var staticFS embed.FS
 func RunWebServer(options *version.Options) {
 	os.MkdirAll("./logs", 0o755)
 
+	scanlogger.Init("./logs")
+
 	if err := trpc.InitTrpc("./trpc_go.yaml"); err != nil {
 		log.Fatalf("Trpc-go初始化失败: %v", err)
 	}
@@ -56,6 +59,11 @@ func RunWebServer(options *version.Options) {
 
 	r := gin.Default()
 	r.SetTrustedProxies(nil)
+	r.MaxMultipartMemory = 50 << 20
+	r.Use(func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 50<<20)
+		c.Next()
+	})
 	// 2. 添加中间件
 	//r.Use(middleware.TrpcMiddleware())
 	//r.Use(middleware.RequestLoggerMiddleware()) // 添加请求参数日志中间件

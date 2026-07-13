@@ -72,6 +72,16 @@ func (p *InfraGuardPlugin) Scan(ctx context.Context, target ScanTarget) (*ScanRe
 		return result, nil
 	}
 
+	originalTarget := targetValue
+
+	if !strings.HasPrefix(targetValue, "http://") && !strings.HasPrefix(targetValue, "https://") {
+		targetValue = "http://" + targetValue
+	}
+
+	targetValue = strings.TrimSuffix(targetValue, "/")
+
+	ReportProgress(ctx, 0, 0, fmt.Sprintf("Infra scan target: %s -> %s", originalTarget, targetValue))
+
 	timeoutSec := p.config.GetInt("timeout")
 	if timeoutSec <= 0 {
 		timeoutSec = 300

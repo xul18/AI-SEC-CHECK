@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # 配置参数，和Windows脚本保持一致
-VERSION="v1.0.0"
+VERSION="v1.0.5"
 BINARY="ai-sec-check"
 LDFLAGS="-X ai-sec-check/internal/options.version=${VERSION} -s -w"
 
@@ -53,8 +53,9 @@ echo "[OK] Configs copied."
 cp -r data dist/ai-sec-check/data
 echo "[OK] Data files copied."
 
-# Linux 不需要 bat 脚本，注释掉；如需部署脚本可放 sh
-# cp start.sh stop.sh install.sh dist/ai-sec-check/
+# 复制部署脚本
+cp start.sh stop.sh install.sh dist/ai-sec-check/
+echo "[OK] Shell scripts copied."
 
 # 复制配置文件
 [ -f "trpc_go.yaml" ] && cp trpc_go.yaml dist/ai-sec-check/ && echo "[OK] trpc_go.yaml copied."

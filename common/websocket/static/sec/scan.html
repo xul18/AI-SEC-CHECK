@@ -663,6 +663,8 @@ body {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .ai-analysis-card {
@@ -870,7 +872,7 @@ body {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Upload File
           </label>
-          <input type="file" id="fileInput" style="display:none" accept=".json,.yaml,.yml,.txt,.xml,.csv,.log,.conf,.cfg,.ini,.toml,.docx">
+          <input type="file" id="fileInput" style="display:none">
           <div id="fileNameDisplay" class="file-name-display"></div>
         </div>
       </div>
@@ -1029,17 +1031,20 @@ body {
     garak: [
       { key: 'target_name', label: 'Model Name', type: 'text', placeholder: 'e.g. qwen3:0.6b, gpt-4o-mini', hint: 'The model to test (as in OpenAI-compatible API)' },
       { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'sk-xxx (leave empty for local models)', hint: 'API key for authentication. Not needed for local Ollama/vLLM.' },
+      { key: 'payload_file', label: 'Payload File', type: 'file', accept: '.txt', hint: 'Upload TXT file with one payload per line. Used when "Custom Payload" is selected.' },
       { key: 'probes', label: 'Probe Filter', type: 'select', options: [
-        { value: '', label: 'All Probes (32)' },
-        { value: 'prompt_injection', label: 'Prompt Injection (21)' },
-        { value: 'dan', label: 'DAN Jailbreak (2)' },
-        { value: 'roleplay', label: 'Roleplay (2)' },
-        { value: 'encoding', label: 'Encoding Bypass (2)' },
-        { value: 'privilege_escalation', label: 'Privilege Escalation (1)' },
-        { value: 'data_exfiltration', label: 'Data Exfiltration (2)' },
-        { value: 'safety_bypass', label: 'Safety Bypass (2)' },
-        { value: 'promptinject', label: 'PromptInject Only' }
-      ], hint: 'Select which probe categories to run' },
+        { value: 'english', label: 'All English Probes (39)', group: 'english' },
+        { value: 'prompt_injection', label: 'Prompt Injection (21)', group: 'english' },
+        { value: 'dan', label: 'DAN Jailbreak (2)', group: 'english' },
+        { value: 'roleplay', label: 'Roleplay (2)', group: 'english' },
+        { value: 'encoding', label: 'Encoding Bypass (2)', group: 'english' },
+        { value: 'privilege_escalation', label: 'Privilege Escalation (1)', group: 'english' },
+        { value: 'data_exfiltration', label: 'Data Exfiltration (2)', group: 'english' },
+        { value: 'safety_bypass', label: 'Safety Bypass (2)', group: 'english' },
+        { value: 'multimodal', label: 'Multimodal (7)', group: 'english' },
+        { value: 'chinese', label: 'Chinese Probes (22)', group: 'chinese' },
+        { value: 'custom_payload', label: 'Custom Payload (Upload File)', group: 'custom' }
+      ], hint: 'Select probe category or custom payload' },
       { key: 'max_concurrency', label: 'Concurrency', type: 'select', options: [
         { value: '1', label: '1 (Slow)' },
         { value: '3', label: '3 (Default)' },
@@ -1048,6 +1053,7 @@ body {
       ], hint: 'Number of concurrent probe requests' }
     ],
     garak_custom: [
+      { key: 'payload_file', label: 'Payload File', type: 'file', accept: '.txt', hint: 'Upload TXT file with one payload per line. Used when "Custom Payload" is selected.' },
       { key: 'http_method', label: 'HTTP Method', type: 'select', options: [
         { value: 'POST', label: 'POST (Default)' },
         { value: 'GET', label: 'GET' },
@@ -1055,7 +1061,7 @@ body {
         { value: 'PATCH', label: 'PATCH' },
         { value: 'DELETE', label: 'DELETE' }
       ], hint: 'HTTP method for API requests (GET/POST/PUT/PATCH/DELETE)' },
-      { key: 'body_template', label: 'Request Template', type: 'text', placeholder: `{"prompt": "$INPUT"}`, hint: 'Request body template. Use $INPUT for prompt, $KEY for API key. Supports JSON format.' },
+      { key: 'body_template', label: 'Request Template', type: 'text', placeholder: `{"text": "$INPUT"，"image_url": "$IMAGE_URL", "AUDIO_DATA": "$AUDIO_DATA", "FILE_CONTENT": "$FILE_CONTENT"}`, hint: 'Request body template. Use $INPUT for prompt, $KEY for API key. Supports JSON format.' },
       { key: 'response_path', label: 'Response Field', type: 'text', placeholder: 'choices.0.message.content', hint: 'JSON field path to extract response content. Use $ prefix for JSONPath (e.g., $.choices[0].message.content)' },
       { key: 'response_json', label: 'JSON Response', type: 'select', options: [
         { value: 'true', label: 'Yes (Default)' },
@@ -1071,16 +1077,18 @@ body {
         { value: 'false', label: 'No (Default)' }
       ], hint: 'Enforce SSL certificate validation' },
       { key: 'probes', label: 'Probe Filter', type: 'select', options: [
-        { value: '', label: 'All Probes (32)' },
-        { value: 'prompt_injection', label: 'Prompt Injection (21)' },
-        { value: 'dan', label: 'DAN Jailbreak (2)' },
-        { value: 'roleplay', label: 'Roleplay (2)' },
-        { value: 'encoding', label: 'Encoding Bypass (2)' },
-        { value: 'privilege_escalation', label: 'Privilege Escalation (1)' },
-        { value: 'data_exfiltration', label: 'Data Exfiltration (2)' },
-        { value: 'safety_bypass', label: 'Safety Bypass (2)' },
-        { value: 'promptinject', label: 'PromptInject Only' }
-      ], hint: 'Select which probe categories to run' },
+        { value: 'english', label: 'All English Probes (39)', group: 'english' },
+        { value: 'prompt_injection', label: 'Prompt Injection (21)', group: 'english' },
+        { value: 'dan', label: 'DAN Jailbreak (2)', group: 'english' },
+        { value: 'roleplay', label: 'Roleplay (2)', group: 'english' },
+        { value: 'encoding', label: 'Encoding Bypass (2)', group: 'english' },
+        { value: 'privilege_escalation', label: 'Privilege Escalation (1)', group: 'english' },
+        { value: 'data_exfiltration', label: 'Data Exfiltration (2)', group: 'english' },
+        { value: 'safety_bypass', label: 'Safety Bypass (2)', group: 'english' },
+        { value: 'multimodal', label: 'Multimodal (7)', group: 'english' },
+        { value: 'chinese', label: 'Chinese Probes (22)', group: 'chinese' },
+        { value: 'custom_payload', label: 'Custom Payload (Upload File)', group: 'custom' }
+      ], hint: 'Select probe category or custom payload' },
       { key: 'max_concurrency', label: 'Concurrency', type: 'select', options: [
         { value: '1', label: '1 (Slow)' },
         { value: '3', label: '3 (Default)' },
@@ -1089,18 +1097,17 @@ body {
       ], hint: 'Number of concurrent probe requests' }
     ],
     ratelimit: [
-      { key: 'min_threads', label: 'Min Threads (req/s)', type: 'select', options: [
-        { value: '5', label: '5 req/s' },
-        { value: '10', label: '10 req/s (Default)' },
-        { value: '20', label: '20 req/s' },
-        { value: '50', label: '50 req/s' }
-      ], hint: 'Starting concurrent thread count' },
-      { key: 'max_threads', label: 'Max Threads (req/s)', type: 'select', options: [
-        { value: '50', label: '50 req/s' },
-        { value: '100', label: '100 req/s' },
-        { value: '200', label: '200 req/s (Default)' },
-        { value: '500', label: '500 req/s (Aggressive)' }
-      ], hint: 'Maximum concurrent thread count' },
+      { key: 'method', label: 'HTTP Method', type: 'select', options: [
+        { value: 'GET', label: 'GET (Default)' },
+        { value: 'POST', label: 'POST' },
+        { value: 'PUT', label: 'PUT' },
+        { value: 'PATCH', label: 'PATCH' },
+        { value: 'DELETE', label: 'DELETE' }
+      ], hint: 'HTTP method for load testing requests' },
+      { key: 'body', label: 'Request Body', type: 'text', placeholder: '', hint: 'Request body for POST/PUT/PATCH methods' },
+      { key: 'min_threads', label: 'Min Threads', type: 'text', placeholder: '10', hint: 'Starting concurrent thread count (e.g., 5, 10, 20, 50)' },
+      { key: 'max_threads', label: 'Max Threads', type: 'text', placeholder: '200', hint: 'Maximum concurrent thread count (e.g., 50, 100, 200, 500)' },
+      { key: 'threads_limit', label: 'Total Requests Limit', type: 'text', placeholder: '0 (Unlimited)', hint: 'Global maximum requests limit (0 = unlimited, controls total number of requests sent)' },
       { key: 'duration', label: 'Duration', type: 'select', options: [
         { value: '10', label: '10 seconds' },
         { value: '30', label: '30 seconds (Default)' },
@@ -1234,11 +1241,94 @@ body {
       if (p.type === 'select') {
         input = document.createElement('select');
         input.id = 'param_' + p.key;
+        
+        var groups = {};
         p.options.forEach(function(opt) {
-          var o = document.createElement('option');
-          o.value = opt.value;
-          o.textContent = opt.label;
-          input.appendChild(o);
+          var groupName = opt.group || 'default';
+          if (!groups[groupName]) {
+            groups[groupName] = [];
+          }
+          groups[groupName].push(opt);
+        });
+        
+        for (var groupName in groups) {
+          var groupOpts = groups[groupName];
+          if (groupOpts.length > 1) {
+            var optgroup = document.createElement('optgroup');
+            optgroup.label = groupName.charAt(0).toUpperCase() + groupName.slice(1);
+            input.appendChild(optgroup);
+            groupOpts.forEach(function(opt) {
+              var o = document.createElement('option');
+              o.value = opt.value;
+              o.textContent = opt.label;
+              optgroup.appendChild(o);
+            });
+          } else {
+            groupOpts.forEach(function(opt) {
+              var o = document.createElement('option');
+              o.value = opt.value;
+              o.textContent = opt.label;
+              input.appendChild(o);
+            });
+          }
+        }
+        
+        if (p.key === 'probes') {
+          input.addEventListener('change', function(e) {
+            var selectedVal = e.target.value;
+            var selectedText = e.target.options[e.target.selectedIndex].text;
+            if (selectedVal !== 'english' && selectedVal !== 'chinese' && selectedVal !== 'custom_payload') {
+              input.selectedTextOverride = 'English Probes - ' + selectedText;
+              var wrapper = input.parentNode.parentNode;
+              if (wrapper) {
+                var displaySpan = wrapper.querySelector('.select-display');
+                if (displaySpan) {
+                  displaySpan.textContent = 'English Probes - ' + selectedText;
+                }
+              }
+            }
+          });
+        }
+      } else if (p.type === 'file') {
+        var fileWrapper = document.createElement('div');
+        fileWrapper.style.display = 'block';
+        fileWrapper.id = 'param_group_' + p.key;
+
+        var fileBtn = document.createElement('label');
+        fileBtn.className = 'file-upload-btn';
+        fileBtn.setAttribute('for', 'param_' + p.key);
+        fileBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Select File';
+        
+        input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'param_' + p.key;
+        input.style.display = 'none';
+        if (p.accept) {
+          input.accept = p.accept;
+        }
+
+        var fileNameDisplay = document.createElement('div');
+        fileNameDisplay.className = 'file-name-display';
+        fileNameDisplay.id = 'param_filename_' + p.key;
+
+        fileBtn.appendChild(input);
+        fileWrapper.appendChild(fileBtn);
+        fileWrapper.appendChild(fileNameDisplay);
+        group.appendChild(fileWrapper);
+
+        input.addEventListener('change', function(e) {
+          var file = e.target.files[0];
+          if (file) {
+            fileNameDisplay.textContent = file.name;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+              input.fileContent = ev.target.result;
+            };
+            reader.readAsText(file);
+          } else {
+            fileNameDisplay.textContent = '';
+            input.fileContent = '';
+          }
         });
       } else {
         input = document.createElement('input');
@@ -1246,7 +1336,9 @@ body {
         input.id = 'param_' + p.key;
         input.placeholder = p.placeholder || '';
       }
-      group.appendChild(input);
+      if (p.type !== 'file') {
+        group.appendChild(input);
+      }
 
       if (p.hint) {
         var hint = document.createElement('div');
@@ -1294,7 +1386,12 @@ body {
       }
     };
     
-    if (file.name.toLowerCase().endsWith('.docx')) {
+    var ext = file.name.toLowerCase();
+    if (ext.endsWith('.docx') || ext.endsWith('.pdf') || ext.endsWith('.doc') || 
+        ext.endsWith('.wps') || ext.endsWith('.xlsx') || ext.endsWith('.xls') || 
+        ext.endsWith('.et') || ext.endsWith('.ett') || ext.endsWith('.xlsm') || 
+        ext.endsWith('.xlsb') || ext.endsWith('.docm') || ext.endsWith('.dotx') || 
+        ext.endsWith('.dotm')) {
       reader.readAsDataURL(file);
     } else {
       reader.readAsText(file);
@@ -1561,9 +1658,19 @@ body {
       pluginParams.forEach(function(p) {
         var el = $('param_' + p.key);
         if (!el) return;
-        var val = el.value.trim();
+        var val;
+        if (p.type === 'file') {
+          val = el.fileContent || '';
+        } else {
+          val = el.value.trim();
+        }
         if (!val) return;
-        if (p.key === 'target_name' || p.key === 'api_key' || p.key === 'probes') {
+        if (p.key === 'target_name' || p.key === 'api_key' || p.key === 'probes' || p.key === 'payload_file' ||
+            p.key === 'max_concurrency' || p.key === 'threads_limit' || p.key === 'min_threads' || p.key === 'max_threads' || 
+            p.key === 'duration' || p.key === 'ramp_up' || p.key === 'method' || p.key === 'body' ||
+            p.key === 'http_method' || p.key === 'body_template' || p.key === 'response_path' ||
+            p.key === 'response_json' || p.key === 'headers' || p.key === 'rate_limit_codes' ||
+            p.key === 'skip_codes' || p.key === 'request_timeout' || p.key === 'verify_ssl') {
           metadata[p.key] = val;
         } else {
           params[p.key] = val;

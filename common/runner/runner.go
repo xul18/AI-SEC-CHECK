@@ -40,12 +40,10 @@ import (
 
 	"github.com/liushuochen/gotable"
 	"github.com/logrusorgru/aurora"
-	"github.com/projectdiscovery/fastdialer/fastdialer"
 	"github.com/projectdiscovery/hmap/store/hybrid"
 	"github.com/remeh/sizedwaitgroup"
 	"go.uber.org/ratelimit"
 
-	// automatic fd max increase if running as root
 	_ "github.com/projectdiscovery/fdmax/autofdmax"
 )
 
@@ -248,21 +246,14 @@ func (r *Runner) initComponents() error {
 	r.rateLimiter = ratelimit.New(r.Options.RateLimit)
 	r.result = make(chan HttpResult)
 
-	// 初始化DNS解析器
-	dialer, err := fastdialer.NewDialer(fastdialer.DefaultOptions)
-	if err != nil {
-		return fmt.Errorf("could not create resolver cache: %s", err)
-	}
-
-	// 配置HTTP客户端选项
 	httpOptions := &httpx.HTTPOptions{
 		Timeout:          time.Duration(r.Options.TimeOut) * time.Second,
-		RetryMax:         1,
+		RetryMax:         3,
 		FollowRedirects:  true,
 		HTTPProxy:        r.Options.ProxyURL,
 		Unsafe:           false,
 		DefaultUserAgent: httpx.GetRandomUserAgent(),
-		Dialer:           dialer,
+		Dialer:           nil,
 		CustomHeaders:    r.Options.Headers,
 	}
 
@@ -403,7 +394,9 @@ func (r *Runner) runDomainRequest(fullUrl string) error {
 
 // Close cleans up resources used by the Runner
 func (r *Runner) Close() {
-	r.hp.Options.Dialer.Close()
+	if r.hp.Options.Dialer != nil {
+		r.hp.Options.Dialer.Close()
+	}
 	_ = r.hm.Close()
 }
 

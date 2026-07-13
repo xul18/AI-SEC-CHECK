@@ -8,7 +8,7 @@ echo   All plugins: Go native, zero external dependencies
 echo ============================================================
 echo.
 
-set "VERSION=v1.0.0"
+set "VERSION=v1.0.5"
 set "BINARY=ai-sec-check.exe"
 set "LDFLAGS=-X ai-sec-check/internal/options.version=%VERSION% -s -w"
 

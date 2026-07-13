@@ -1,6 +1,6 @@
 module ai-sec-check
 
-go 1.23.2
+go 1.24.1
 
 require (
 	github.com/LuYongwang/go-sensitive-word v1.1.0
@@ -45,6 +45,7 @@ require (
 	github.com/go-openapi/spec v0.20.4 // indirect
 	github.com/go-openapi/swag v0.19.15 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/swaggo/swag v1.16.1 // indirect
 	github.com/ysmood/fetchup v0.2.3 // indirect
