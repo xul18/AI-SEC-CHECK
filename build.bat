@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 title AI-SEC-CHECK - Build
 
 echo ============================================================
-echo   AI-SEC-CHECK v1.0.0 - Build Script
+echo   AI-SEC-CHECK v1.0.5 - Build Script
 echo   All plugins: Go native, zero external dependencies
 echo ============================================================
 echo.
