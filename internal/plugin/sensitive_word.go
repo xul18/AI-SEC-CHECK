@@ -922,17 +922,55 @@ func ExtractTextFromLegacyOffice(data []byte, ext string) (string, error) {
 }
 
 func extractTextFromDoc(data []byte) (string, error) {
-	text := extractTextFromWordOLE2(data)
-	if text != "" {
-		return text, nil
+	extractors := []func([]byte) string{
+		decodeUTF16LE,
+		decodeUTF16BE,
+		extractTextFromDocWithOLE2,
+		extractTextFromWordOLE2,
+		extractAllTextFromBinary,
+		extractTextFromDocSimple,
+		extractWordsFromBinary,
+		extractTextFromRTF,
 	}
 
-	text = extractTextFromDocSimple(data)
-	if text != "" {
-		return text, nil
+	for _, extractor := range extractors {
+		text := extractor(data)
+		if text != "" {
+			hasChinese := false
+			for _, r := range text {
+				if r >= 0x4E00 && r <= 0x9FFF {
+					hasChinese = true
+					break
+				}
+			}
+			if hasChinese {
+				return text, nil
+			}
+		}
 	}
 
-	return extractAllTextFromBinary(data), nil
+	gbkText, err := decodeGBK(data)
+	if err == nil && gbkText != "" {
+		hasChinese := false
+		for _, r := range gbkText {
+			if r >= 0x4E00 && r <= 0x9FFF {
+				hasChinese = true
+				break
+			}
+		}
+		if hasChinese {
+			return gbkText, nil
+		}
+	}
+
+	for _, extractor := range extractors {
+		text := extractor(data)
+		if text != "" {
+			return text, nil
+		}
+	}
+
+	return "", nil
 }
 
 func extractTextFromDocSimple(data []byte) string {
