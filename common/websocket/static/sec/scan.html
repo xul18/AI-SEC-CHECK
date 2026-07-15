@@ -1061,7 +1061,7 @@ body {
         { value: 'PATCH', label: 'PATCH' },
         { value: 'DELETE', label: 'DELETE' }
       ], hint: 'HTTP method for API requests (GET/POST/PUT/PATCH/DELETE)' },
-      { key: 'body_template', label: 'Request Template', type: 'text', placeholder: `{"text": "$INPUT"，"image_url": "$IMAGE_URL", "AUDIO_DATA": "$AUDIO_DATA", "FILE_CONTENT": "$FILE_CONTENT"}`, hint: 'Request body template. Use $INPUT for prompt, $KEY for API key. Supports JSON format.' },
+      { key: 'body_template', label: 'Request Template', type: 'text', placeholder: `{"text": "$INPUT", "image_url": "$IMAGE_URL", "audio_data": "$AUDIO_DATA", "file_content": "$FILE_CONTENT"}`, hint: 'Request body template. Use $INPUT for prompt, $KEY for API key. $IMAGE_URL/$AUDIO_DATA/$FILE_CONTENT are optional and auto-replaced for multimodal probes.' },
       { key: 'response_path', label: 'Response Field', type: 'text', placeholder: 'choices.0.message.content', hint: 'JSON field path to extract response content. Use $ prefix for JSONPath (e.g., $.choices[0].message.content)' },
       { key: 'response_json', label: 'JSON Response', type: 'select', options: [
         { value: 'true', label: 'Yes (Default)' },

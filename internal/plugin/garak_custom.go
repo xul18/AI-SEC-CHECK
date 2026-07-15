@@ -778,12 +778,15 @@ loop:
 }
 
 func (p *GarakCustomPlugin) sendCustomRequest(ctx context.Context, baseURL, apiKey, httpMethod, bodyTemplate, responsePath string, headers map[string]string, prompt string, modality string) (string, error) {
-	var imagePlaceholder string
+	var imageURLPlaceholder string
 	var audioPlaceholder string
 	var filePlaceholder string
 	
+	const defaultImageBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+	const maxRequestBodySize = 1024 * 1024 * 10
+	
 	if modality == "image" {
-		imagePlaceholder = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+		imageURLPlaceholder = defaultImageBase64
 	} else if modality == "audio" {
 		audioPlaceholder = "[AUDIO_PLACEHOLDER]"
 	} else if modality == "file" {
@@ -792,16 +795,32 @@ func (p *GarakCustomPlugin) sendCustomRequest(ctx context.Context, baseURL, apiK
 	
 	bodyContent := strings.ReplaceAll(bodyTemplate, p.inputPlaceholder, prompt)
 	bodyContent = strings.ReplaceAll(bodyContent, p.keyPlaceholder, apiKey)
-	bodyContent = strings.ReplaceAll(bodyContent, "$IMAGE_URL", imagePlaceholder)
-	bodyContent = strings.ReplaceAll(bodyContent, "$AUDIO_DATA", audioPlaceholder)
-	bodyContent = strings.ReplaceAll(bodyContent, "$FILE_CONTENT", filePlaceholder)
+	if imageURLPlaceholder != "" {
+		bodyContent = strings.ReplaceAll(bodyContent, "$IMAGE_URL", imageURLPlaceholder)
+	}
+	if audioPlaceholder != "" {
+		bodyContent = strings.ReplaceAll(bodyContent, "$AUDIO_DATA", audioPlaceholder)
+	}
+	if filePlaceholder != "" {
+		bodyContent = strings.ReplaceAll(bodyContent, "$FILE_CONTENT", filePlaceholder)
+	}
+
+	if len(bodyContent) > maxRequestBodySize {
+		return "", fmt.Errorf("request body too large: %d bytes", len(bodyContent))
+	}
 
 	for k, v := range headers {
 		v = strings.ReplaceAll(v, p.inputPlaceholder, prompt)
 		v = strings.ReplaceAll(v, p.keyPlaceholder, apiKey)
-		v = strings.ReplaceAll(v, "$IMAGE_URL", imagePlaceholder)
-		v = strings.ReplaceAll(v, "$AUDIO_DATA", audioPlaceholder)
-		v = strings.ReplaceAll(v, "$FILE_CONTENT", filePlaceholder)
+		if imageURLPlaceholder != "" {
+			v = strings.ReplaceAll(v, "$IMAGE_URL", imageURLPlaceholder)
+		}
+		if audioPlaceholder != "" {
+			v = strings.ReplaceAll(v, "$AUDIO_DATA", audioPlaceholder)
+		}
+		if filePlaceholder != "" {
+			v = strings.ReplaceAll(v, "$FILE_CONTENT", filePlaceholder)
+		}
 		headers[k] = v
 	}
 

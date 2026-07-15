@@ -17,6 +17,7 @@ import (
 	"ai-sec-check/internal/ai"
 	"ai-sec-check/internal/plugin"
 	"ai-sec-check/internal/storage"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -170,64 +171,68 @@ func (api *PluginAPI) HandlePluginScan(c *gin.Context) {
 
 	var targetValue = req.Target
 	var targetType = req.TargetType
-	if req.TargetType == "file" && req.FileName != "" && strings.HasPrefix(req.Target, "data:") {
-		ext := strings.ToLower(req.FileName[strings.LastIndex(req.FileName, "."):])
-		base64Data := strings.SplitN(req.Target, ",", 2)[1]
-		decoded, err := base64.StdEncoding.DecodeString(base64Data)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"status":  1,
-				"message": "failed to decode file: " + err.Error(),
-				"data":    nil,
-			})
-			return
-		}
+	if req.TargetType == "file" && req.FileName != "" {
+		if strings.HasPrefix(req.Target, "data:") {
+			ext := strings.ToLower(req.FileName[strings.LastIndex(req.FileName, "."):])
+			base64Data := strings.SplitN(req.Target, ",", 2)[1]
+			decoded, err := base64.StdEncoding.DecodeString(base64Data)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"status":  1,
+					"message": "failed to decode file: " + err.Error(),
+					"data":    nil,
+				})
+				return
+			}
 
-		switch ext {
-		case ".docx", ".wps", ".docm", ".dotx", ".dotm":
-			docxText, docxErr := plugin.ExtractTextFromDocx(decoded)
-			if docxErr != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"status":  1,
-					"message": "failed to parse document file: " + docxErr.Error(),
-					"data":    nil,
-				})
-				return
+			switch ext {
+			case ".docx", ".wps", ".docm", ".dotx", ".dotm":
+				docxText, docxErr := plugin.ExtractTextFromDocx(decoded)
+				if docxErr != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  1,
+						"message": "failed to parse document file: " + docxErr.Error(),
+						"data":    nil,
+					})
+					return
+				}
+				targetValue = docxText
+			case ".pdf":
+				pdfText, pdfErr := plugin.ExtractTextFromPDF(decoded)
+				if pdfErr != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  1,
+						"message": "failed to parse pdf file: " + pdfErr.Error(),
+						"data":    nil,
+					})
+					return
+				}
+				targetValue = pdfText
+			case ".xlsx", ".xlsb", ".xlsm", ".et", ".ett":
+				xlsxText, xlsxErr := plugin.ExtractTextFromXlsx(decoded)
+				if xlsxErr != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  1,
+						"message": "failed to parse excel file: " + xlsxErr.Error(),
+						"data":    nil,
+					})
+					return
+				}
+				targetValue = xlsxText
+			case ".doc", ".xls":
+				legacyText, legacyErr := plugin.ExtractTextFromLegacyOffice(decoded, ext)
+				if legacyErr != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  1,
+						"message": "failed to parse legacy office file: " + legacyErr.Error(),
+						"data":    nil,
+					})
+					return
+				}
+				targetValue = legacyText
+			default:
+				targetValue = string(decoded)
 			}
-			targetValue = docxText
-		case ".pdf":
-			pdfText, pdfErr := plugin.ExtractTextFromPDF(decoded)
-			if pdfErr != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"status":  1,
-					"message": "failed to parse pdf file: " + pdfErr.Error(),
-					"data":    nil,
-				})
-				return
-			}
-			targetValue = pdfText
-		case ".xlsx", ".xlsb", ".xlsm", ".et", ".ett":
-			xlsxText, xlsxErr := plugin.ExtractTextFromXlsx(decoded)
-			if xlsxErr != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"status":  1,
-					"message": "failed to parse excel file: " + xlsxErr.Error(),
-					"data":    nil,
-				})
-				return
-			}
-			targetValue = xlsxText
-		case ".doc", ".xls":
-			legacyText, legacyErr := plugin.ExtractTextFromLegacyOffice(decoded, ext)
-			if legacyErr != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"status":  1,
-					"message": "failed to parse legacy office file: " + legacyErr.Error(),
-					"data":    nil,
-				})
-				return
-			}
-			targetValue = legacyText
 		}
 		targetType = "text"
 	}
@@ -564,7 +569,7 @@ func (api *PluginAPI) HandleGetScanStats(c *gin.Context) {
 		"status":  0,
 		"message": "ok",
 		"data": gin.H{
-			"total":      total,
+			"total":       total,
 			"by_category": counts,
 		},
 	})
